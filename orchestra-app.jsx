@@ -367,9 +367,14 @@ function LoginScreen({ config, onLogin }) {
 
 // ─── MAIN APP ──────────────────────────────────────────────────────────────────
 export default function App() {
-  const [config, setConfig] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("km_config")||"null"); } catch { return null; }
-  });
+ const [config, setConfig] = useState(() => {
+  try { 
+    return JSON.parse(localStorage.getItem("km_config")||"null"); 
+  } catch { return null; }
+}) || (import.meta.env.VITE_SUPABASE_URL ? {
+  url: import.meta.env.VITE_SUPABASE_URL,
+  key: import.meta.env.VITE_SUPABASE_KEY
+} : null);
   const [session, setSession] = useState(() => {
     try { return JSON.parse(localStorage.getItem("km_session")||"null"); } catch { return null; }
   });
