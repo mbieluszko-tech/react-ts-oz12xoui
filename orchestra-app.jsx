@@ -367,14 +367,19 @@ function LoginScreen({ config, onLogin }) {
 
 // ─── MAIN APP ──────────────────────────────────────────────────────────────────
 export default function App() {
- const [config, setConfig] = useState(() => {
-  try { 
-    return JSON.parse(localStorage.getItem("km_config")||"null"); 
-  } catch { return null; }
-}) || (import.meta.env.VITE_SUPABASE_URL ? {
-  url: import.meta.env.VITE_SUPABASE_URL,
-  key: import.meta.env.VITE_SUPABASE_KEY
-} : null);
+  const [config, setConfig] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("km_config")||"null");
+      if (saved) return saved;
+    } catch {}
+    // ⬇️ WKLEJ SWOJE DANE Z SUPABASE → Settings → API Keys
+    const SUPABASE_URL = "https://pkqjlpsprxmlpkclzwoe.supabase.co";
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBrcWpscHNwcnhtbHBrY2x6d29lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4Mjg5NzksImV4cCI6MjA4OTQwNDk3OX0.kMQMbcppSQ_-NkhTasWa5d36-WfT5yJKxomf_rwWwtA";
+    if (SUPABASE_KEY !== "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBrcWpscHNwcnhtbHBrY2x6d29lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4Mjg5NzksImV4cCI6MjA4OTQwNDk3OX0.kMQMbcppSQ_-NkhTasWa5d36-WfT5yJKxomf_rwWwtA") {
+      return { url: SUPABASE_URL, key: SUPABASE_KEY };
+    }
+    return null;
+  });
   const [session, setSession] = useState(() => {
     try { return JSON.parse(localStorage.getItem("km_session")||"null"); } catch { return null; }
   });
