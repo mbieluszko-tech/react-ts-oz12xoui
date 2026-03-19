@@ -1,13 +1,12 @@
 import * as React from 'react';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import App from './src/App';
 
-import App from './orchestra-app';
+const root = document.getElementById('root');
+if (!root) throw new Error('Root element not found');
 
-const rootElement = document.getElementById('root');
-const root = createRoot(rootElement);
-
-root.render(
+createRoot(root).render(
   <StrictMode>
     <App />
   </StrictMode>
