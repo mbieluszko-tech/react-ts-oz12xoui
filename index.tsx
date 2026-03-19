@@ -1,4 +1,3 @@
-cat > index.tsx << 'EOF'
 import * as React from 'react';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -12,8 +11,3 @@ createRoot(root).render(
     <App />
   </StrictMode>
 );
-EOF
-
-git add index.tsx
-git commit -m "Switch to modular src/App"
-git push
