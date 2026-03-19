@@ -49,7 +49,7 @@ function App() {
   const [session, setSession] = useState(() => {
     try {
       const s = JSON.parse(localStorage.getItem("km_session") || "null");
-      if (s?.token && s?.email) return s;
+     if (s?.token && s?.email && s?.refresh_token && s?.expires_at) return s;
     } catch {}
     return null;
   });
