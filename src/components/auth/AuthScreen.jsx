@@ -31,15 +31,20 @@ export function AuthScreen({ config, onLogin }) {
 
   const authClient = createAuthClient(config.url, config.key);
 
-  const handleLogin = async () => {
-    if (!loginForm.validate()) return;
-    setLoading(true); setServerError("");
-    try {
-      const data = await authClient.login(loginForm.values.email, loginForm.values.password);
-      onLogin(data.access_token, data.user);
-    } catch(e) { setServerError(e.message); }
-    finally { setLoading(false); }
-  };
+const handleLogin = async () => {
+  if (!loginForm.validate()) return;
+  setLoading(true);
+  setServerError("");
+
+  try {
+    const data = await authClient.login(loginForm.values.email, loginForm.values.password);
+    onLogin(data);
+  } catch (e) {
+    setServerError(e.message);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleRegister = async () => {
     if (!regForm.validate()) return;
