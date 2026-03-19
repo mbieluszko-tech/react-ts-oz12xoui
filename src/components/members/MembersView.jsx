@@ -112,4 +112,3 @@ export function MembersView({ data, onSelectMember, onAddMember }) {
     </>
   );
 }
-

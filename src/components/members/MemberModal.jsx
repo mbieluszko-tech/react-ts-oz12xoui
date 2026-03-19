@@ -270,4 +270,3 @@ export function MemberModal({ member, sections, appointments, getReplies, onClos
     </div>
   );
 }
-

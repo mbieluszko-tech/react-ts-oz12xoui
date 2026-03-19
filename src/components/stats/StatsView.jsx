@@ -102,4 +102,3 @@ export const StatsView = memo(function StatsView({ data, getReplies }) {
     </>
   );
 });
-
