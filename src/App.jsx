@@ -106,12 +106,33 @@ function App() {
     setConfig(cfg);
   }, []);
 
-  const handleLogin = useCallback((token, user) => {
-    if (!token || !user?.email) { toast.error("Nieprawidłowa odpowiedź serwera."); return; }
-    const s = { token, email: user.email, expires_at: user.expires_at, refresh_token: user.refresh_token };
-    localStorage.setItem("km_session", JSON.stringify(s));
-    setSession(s);
-  }, [toast]);
+ const handleLogin = useCallback((authData) => {
+  const token = authData?.access_token;
+  const refreshToken = authData?.refresh_token;
+  const email = authData?.user?.email;
+
+  const expiresAt =
+    authData?.expires_at
+      ? new Date(authData.expires_at * 1000).toISOString()
+      : authData?.expires_in
+        ? new Date(Date.now() + authData.expires_in * 1000).toISOString()
+        : null;
+
+  if (!token || !refreshToken || !email || !expiresAt) {
+    toast.error("Nieprawidłowa odpowiedź serwera logowania.");
+    return;
+  }
+
+  const s = {
+    token,
+    refresh_token: refreshToken,
+    email,
+    expires_at: expiresAt,
+  };
+
+  localStorage.setItem("km_session", JSON.stringify(s));
+  setSession(s);
+}, [toast]);
 
   const handleSelectOrg = useCallback((org) => {
     if (!org?.id) return;
