@@ -1,7 +1,5 @@
-import { createApiClient } from '../utils/api';
-
 export function normalizeSlug(value) {
-  return String(value || "")
+  return (value || "")
     .toLowerCase()
     .trim()
     .replace(/ą/g, "a")
@@ -25,7 +23,7 @@ export function makeUniqueSlug(baseSlug, organizations = [], currentOrgId = null
   if (!cleanBase) return "";
 
   const usedSlugs = new Set(
-    (organizations || [])
+    organizations
       .filter(org => org?.id !== currentOrgId)
       .map(org => String(org.slug || "").toLowerCase())
   );
@@ -34,79 +32,20 @@ export function makeUniqueSlug(baseSlug, organizations = [], currentOrgId = null
 
   let counter = 2;
   let candidate = `${cleanBase}-${counter}`;
+
   while (usedSlugs.has(candidate)) {
     counter += 1;
     candidate = `${cleanBase}-${counter}`;
   }
+
   return candidate;
 }
 
-export function createRestFetcher(config, session) {
-  return async function fetchTable(path) {
-    if (!config?.url || !config?.key || !session?.token) {
-      throw new Error("Brak konfiguracji połączenia.");
-    }
-
-    const response = await fetch(`${config.url}/rest/v1/${path}`, {
-      headers: {
-        apikey: config.key,
-        Authorization: `Bearer ${session.token}`,
-        "Content-Type": "application/json",
-      },
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text || `Błąd pobierania ${path}`);
-    }
-
-    return response.json();
-  };
-}
-
-export function downloadJsonFile(filename, dataToSave) {
-  const blob = new Blob([JSON.stringify(dataToSave, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-export async function getOrganizationStats(fetchTable, orgIds = []) {
-  const entries = await Promise.all(
-    (orgIds || []).map(async (orgId) => {
-      const [members, sections, appointments, pending] = await Promise.all([
-        fetchTable(`members?organization_id=eq.${orgId}&select=id`),
-        fetchTable(`sections?organization_id=eq.${orgId}&select=id`),
-        fetchTable(`appointments?organization_id=eq.${orgId}&select=id`),
-        fetchTable(`pending_registrations?organization_id=eq.${orgId}&select=id`),
-      ]);
-
-      return [
-        orgId,
-        {
-          members: members?.length || 0,
-          sections: sections?.length || 0,
-          appointments: appointments?.length || 0,
-          pending: pending?.length || 0,
-        },
-      ];
-    })
-  );
-
-  return Object.fromEntries(entries);
-}
-
-export async function createOrganizationBundle({
+export async function createOrganizationWithAdmin({
   client,
   formData,
   sessionEmail,
-  currentMemberName,
-  currentMemberPhone,
+  currentMember,
 }) {
   const created = await client.post("organizations", {
     name: formData.name.trim(),
@@ -125,11 +64,11 @@ export async function createOrganizationBundle({
     throw new Error("Nie udało się utworzyć organizacji.");
   }
 
-  const secs = (formData.sections || []).filter(s => s.name?.trim());
-  if (secs.length) {
+  const sections = (formData.sections || []).filter(s => s.name?.trim());
+  if (sections.length) {
     await client.post(
       "sections",
-      secs.map(s => ({
+      sections.map(s => ({
         name: s.name.trim(),
         color: s.color || "#888",
         organization_id: org.id,
@@ -137,12 +76,11 @@ export async function createOrganizationBundle({
     );
   }
 
-  // Super admin zawsze dostaje dostęp do nowej grupy
   if (sessionEmail) {
     await client.post("members", {
-      name: currentMemberName || sessionEmail,
+      name: currentMember?.name || sessionEmail,
       email: sessionEmail,
-      phone: currentMemberPhone || null,
+      phone: currentMember?.phone || null,
       section_id: null,
       role: "super_admin",
       status: "active",
@@ -155,14 +93,11 @@ export async function createOrganizationBundle({
     });
   }
 
-  // Opcjonalny administrator wskazany przez super admina
-  const adminEmail = formData.admin_email?.trim().toLowerCase();
-  const adminName = formData.admin_name?.trim();
-
-  if (adminEmail && adminEmail !== sessionEmail) {
+  const targetAdminEmail = formData.admin_email?.trim().toLowerCase();
+  if (targetAdminEmail && targetAdminEmail !== sessionEmail?.toLowerCase()) {
     await client.post("members", {
-      name: adminName || adminEmail,
-      email: adminEmail,
+      name: formData.admin_name?.trim() || targetAdminEmail,
+      email: targetAdminEmail,
       phone: null,
       section_id: null,
       role: "admin",
@@ -179,51 +114,56 @@ export async function createOrganizationBundle({
   return org;
 }
 
-export async function archiveOrganization(client, org, sessionEmail) {
-  await client.patch(`organizations?id=eq.${org.id}`, {
+export async function updateOrganization(client, id, updates) {
+  return client.patch(`organizations?id=eq.${id}`, {
+    ...updates,
+    slug: updates.slug?.toLowerCase().trim(),
+    name: updates.name?.trim(),
+  });
+}
+
+export async function archiveOrganization({ client, orgId, archivedBy }) {
+  return client.patch(`organizations?id=eq.${orgId}`, {
     archived_at: new Date().toISOString(),
-    archived_by: sessionEmail || null,
+    archived_by: archivedBy || null,
     active: false,
   });
 }
 
-export async function restoreOrganization(client, org) {
-  await client.patch(`organizations?id=eq.${org.id}`, {
+export async function restoreOrganization({ client, orgId }) {
+  return client.patch(`organizations?id=eq.${orgId}`, {
     archived_at: null,
     archived_by: null,
     active: true,
   });
 }
 
-export async function deleteOrganizationSafely(client, fetchTable, org) {
+export async function fetchOrganizationDependencies(fetchTable, orgId) {
   const [members, appointments, sections] = await Promise.all([
-    fetchTable(`members?organization_id=eq.${org.id}&select=id`),
-    fetchTable(`appointments?organization_id=eq.${org.id}&select=id`),
-    fetchTable(`sections?organization_id=eq.${org.id}&select=id`),
+    fetchTable(`members?organization_id=eq.${orgId}&select=id`),
+    fetchTable(`appointments?organization_id=eq.${orgId}&select=id`),
+    fetchTable(`sections?organization_id=eq.${orgId}&select=id`),
   ]);
 
-  const counts = {
-    members: members?.length || 0,
-    appointments: appointments?.length || 0,
-    sections: sections?.length || 0,
+  return {
+    membersCount: members?.length || 0,
+    appointmentsCount: appointments?.length || 0,
+    sectionsCount: sections?.length || 0,
   };
-
-  if (counts.members > 0 || counts.appointments > 0 || counts.sections > 0) {
-    const error = new Error("Grupa zawiera dane i nie może zostać usunięta.");
-    error.details = counts;
-    throw error;
-  }
-
-  await client.delete(`organizations?id=eq.${org.id}`);
 }
 
-export async function exportOrganizationBackup(fetchTable, org) {
-  const organization = org;
+export async function deleteOrganizationPermanently(client, orgId) {
+  return client.delete(`organizations?id=eq.${orgId}`);
+}
 
-  const sections = await fetchTable(`sections?organization_id=eq.${org.id}&select=*`);
-  const members = await fetchTable(`members?organization_id=eq.${org.id}&select=*`);
-  const appointments = await fetchTable(`appointments?organization_id=eq.${org.id}&select=*`);
-  const pending = await fetchTable(`pending_registrations?organization_id=eq.${org.id}&select=*`);
+export async function exportOrganizationBackup({
+  fetchTable,
+  organization,
+}) {
+  const sections = await fetchTable(`sections?organization_id=eq.${organization.id}&select=*`);
+  const members = await fetchTable(`members?organization_id=eq.${organization.id}&select=*`);
+  const appointments = await fetchTable(`appointments?organization_id=eq.${organization.id}&select=*`);
+  const pending = await fetchTable(`pending_registrations?organization_id=eq.${organization.id}&select=*`);
 
   const appointmentIds = appointments.map(a => a.id);
 
@@ -231,19 +171,15 @@ export async function exportOrganizationBackup(fetchTable, org) {
   let replies = [];
 
   if (appointmentIds.length > 0) {
-    appointmentSections = await fetchTable(
-      `appointment_sections?appointment_id=in.(${appointmentIds.join(",")})&select=*`
-    );
-    replies = await fetchTable(
-      `replies?appointment_id=in.(${appointmentIds.join(",")})&select=*`
-    );
+    appointmentSections = await fetchTable(`appointment_sections?appointment_id=in.(${appointmentIds.join(",")})&select=*`);
+    replies = await fetchTable(`replies?appointment_id=in.(${appointmentIds.join(",")})&select=*`);
   }
 
   return {
     meta: {
       version: 1,
       exported_at: new Date().toISOString(),
-      source_org_id: org.id,
+      source_org_id: organization.id,
     },
     organization,
     sections,
@@ -258,7 +194,7 @@ export async function exportOrganizationBackup(fetchTable, org) {
 export async function importOrganizationBackup({
   client,
   parsed,
-  existingOrgs,
+  makeImportSlug,
   sessionEmail,
 }) {
   const backupOrg = parsed?.organization;
@@ -266,7 +202,7 @@ export async function importOrganizationBackup({
     throw new Error("Plik backupu nie zawiera danych organizacji.");
   }
 
-  const newSlug = makeUniqueSlug(backupOrg.slug || backupOrg.name, existingOrgs || []);
+  const newSlug = makeImportSlug(backupOrg.slug || backupOrg.name);
 
   const createdOrgRaw = await client.post("organizations", {
     name: backupOrg.name,
@@ -382,52 +318,4 @@ export async function importOrganizationBackup({
   }
 
   return createdOrg;
-}
-
-export async function duplicateOrganizationStructure({
-  client,
-  fetchTable,
-  org,
-  existingOrgs,
-  sessionEmail,
-  currentMemberName,
-  currentMemberPhone,
-}) {
-  const sections = await fetchTable(`sections?organization_id=eq.${org.id}&select=*`);
-
-  const duplicatedName = `Kopia ${org.name}`;
-  const duplicatedSlug = makeUniqueSlug(`${org.slug}-copy`, existingOrgs || []);
-
-  const newOrg = await createOrganizationBundle({
-    client,
-    formData: {
-      name: duplicatedName,
-      slug: duplicatedSlug,
-      type: org.type,
-      description: org.description || null,
-      color: org.color || "#C9A84C",
-      logo_emoji: org.logo_emoji || "🎼",
-      active: true,
-      sections: sections.map(s => ({
-        name: s.name,
-        color: s.color || "#888",
-      })),
-      admin_email: "",
-      admin_name: "",
-    },
-    sessionEmail,
-    currentMemberName,
-    currentMemberPhone,
-  });
-
-  return newOrg;
-}
-
-export function buildOrgFilename(prefix, slug) {
-  return `${prefix}-${String(slug || "grupa")}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`;
-}
-
-export function createOrgApi(config, session, onUnauthorized) {
-  if (!config?.url || !config?.key || !session?.token) return null;
-  return createApiClient(config.url, config.key, session.token, onUnauthorized);
 }
