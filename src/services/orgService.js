@@ -41,6 +41,51 @@ export function makeUniqueSlug(baseSlug, organizations = [], currentOrgId = null
   return candidate;
 }
 
+async function ensureOrganizationAdmin({
+  client,
+  organizationId,
+  adminEmail,
+  adminName,
+  approvedBy,
+}) {
+  const email = adminEmail?.trim().toLowerCase();
+  if (!email) return null;
+
+  const existing = await client.get(
+    `members?organization_id=eq.${organizationId}&email=eq.${encodeURIComponent(email)}&select=id,name,email,role&limit=1`
+  );
+
+  const found = Array.isArray(existing) ? existing[0] : null;
+
+  if (found?.id) {
+    await client.patch(`members?id=eq.${found.id}`, {
+      role: "admin",
+      name: adminName?.trim() || found.name || email,
+      status: "active",
+      approved_by: approvedBy || null,
+      approved_at: new Date().toISOString(),
+    });
+    return { ...found, role: "admin" };
+  }
+
+  const created = await client.post("members", {
+    name: adminName?.trim() || email,
+    email,
+    phone: null,
+    section_id: null,
+    role: "admin",
+    status: "active",
+    organization_id: organizationId,
+    rodo_accepted: true,
+    terms_accepted: true,
+    joined_at: new Date().toISOString(),
+    approved_by: approvedBy || null,
+    approved_at: new Date().toISOString(),
+  });
+
+  return Array.isArray(created) ? created[0] : created;
+}
+
 export async function createOrganizationWithAdmin({
   client,
   formData,
@@ -95,19 +140,12 @@ export async function createOrganizationWithAdmin({
 
   const targetAdminEmail = formData.admin_email?.trim().toLowerCase();
   if (targetAdminEmail && targetAdminEmail !== sessionEmail?.toLowerCase()) {
-    await client.post("members", {
-      name: formData.admin_name?.trim() || targetAdminEmail,
-      email: targetAdminEmail,
-      phone: null,
-      section_id: null,
-      role: "admin",
-      status: "active",
-      organization_id: org.id,
-      rodo_accepted: true,
-      terms_accepted: true,
-      joined_at: new Date().toISOString(),
-      approved_by: sessionEmail || null,
-      approved_at: new Date().toISOString(),
+    await ensureOrganizationAdmin({
+      client,
+      organizationId: org.id,
+      adminEmail: targetAdminEmail,
+      adminName: formData.admin_name,
+      approvedBy: sessionEmail || null,
     });
   }
 
@@ -115,11 +153,30 @@ export async function createOrganizationWithAdmin({
 }
 
 export async function updateOrganization(client, id, updates) {
-  return client.patch(`organizations?id=eq.${id}`, {
+  await client.patch(`organizations?id=eq.${id}`, {
     ...updates,
     slug: updates.slug?.toLowerCase().trim(),
     name: updates.name?.trim(),
   });
+}
+
+export async function updateOrganizationWithAdmin({
+  client,
+  id,
+  updates,
+  sessionEmail,
+}) {
+  await updateOrganization(client, id, updates);
+
+  if (updates.admin_email?.trim()) {
+    await ensureOrganizationAdmin({
+      client,
+      organizationId: id,
+      adminEmail: updates.admin_email,
+      adminName: updates.admin_name,
+      approvedBy: sessionEmail || null,
+    });
+  }
 }
 
 export async function archiveOrganization({ client, orgId, archivedBy }) {
