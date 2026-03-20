@@ -99,7 +99,7 @@ export function OrgManager({
   onImportOrg,
   onClose
 }) {
-  const [tab, setTab] = useState("active"); // active | archived | create
+  const [tab, setTab] = useState("active");
   const [editOrg, setEditOrg] = useState(null);
   const fileInputRef = useRef(null);
 
