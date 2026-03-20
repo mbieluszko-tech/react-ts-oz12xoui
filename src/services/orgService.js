@@ -52,7 +52,7 @@ async function ensureOrganizationAdmin({
   if (!email) return null;
 
   const existing = await client.get(
-    `members?organization_id=eq.${organizationId}&email=eq.${encodeURIComponent(email)}&select=id,name,email,role&limit=1`
+    `members?organization_id=eq.${organizationId}&email=eq.${encodeURIComponent(email)}&select=id,name,email,role,status&limit=1`
   );
 
   const found = Array.isArray(existing) ? existing[0] : null;
@@ -177,6 +177,30 @@ export async function updateOrganizationWithAdmin({
       approvedBy: sessionEmail || null,
     });
   }
+}
+
+export async function listOrganizationAdmins(client, organizationId) {
+  return client.get(
+    `members?organization_id=eq.${organizationId}&role=in.(admin,super_admin)&select=id,name,email,role,status,approved_at,joined_at&order=role.desc,name.asc`
+  );
+}
+
+export async function promoteOrganizationMemberToAdmin(client, memberId) {
+  return client.patch(`members?id=eq.${memberId}`, {
+    role: "admin",
+    status: "active",
+    approved_at: new Date().toISOString(),
+  });
+}
+
+export async function demoteOrganizationAdminToMember(client, memberId) {
+  return client.patch(`members?id=eq.${memberId}`, {
+    role: "member",
+  });
+}
+
+export async function removeOrganizationMember(client, memberId) {
+  return client.delete(`members?id=eq.${memberId}`);
 }
 
 export async function archiveOrganization({ client, orgId, archivedBy }) {
