@@ -2,7 +2,6 @@ import React, { useRef, useState } from 'react';
 import { Icon } from '../common/Icon';
 import { ORG_TYPE_LABELS } from '../../config';
 
-// ─── DOMYŚLNE SEKCJE PER TYP GRUPY ───────────────────────────────────────────
 const DEFAULT_SECTIONS = {
   orchestra: [
     { name:"Skrzypce I", color:"#C9A84C" },
@@ -93,20 +92,26 @@ export function OrgManager({
   organizations,
   onCreateOrg,
   onUpdateOrg,
+  onArchiveOrg,
+  onRestoreOrg,
   onDeleteOrg,
   onExportOrg,
   onImportOrg,
   onClose
 }) {
-  const [tab, setTab] = useState("list");
+  const [tab, setTab] = useState("active"); // active | archived | create
   const [editOrg, setEditOrg] = useState(null);
   const fileInputRef = useRef(null);
+
+  const activeOrgs = (organizations || []).filter(org => !org.archived_at);
+  const archivedOrgs = (organizations || []).filter(org => !!org.archived_at);
 
   const handleImportFile = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
     try {
       await onImportOrg(file);
+      setTab("active");
     } finally {
       event.target.value = "";
     }
@@ -116,7 +121,7 @@ export function OrgManager({
     <div className="modal-overlay" onClick={onClose}>
       <div
         className="modal modal-wide"
-        style={{ maxWidth: 820 }}
+        style={{ maxWidth: 920 }}
         onClick={e => e.stopPropagation()}
       >
         <div className="modal-header">
@@ -133,19 +138,23 @@ export function OrgManager({
               className="btn btn-secondary btn-sm"
               onClick={() => fileInputRef.current?.click()}
             >
-              <Icon name="upload" size={13} /> Przywróć backup
+              <Icon name="upload" size={13}/> Przywróć backup
             </button>
             <button className="btn btn-ghost btn-sm" aria-label="Zamknij" onClick={onClose}>
-              <Icon name="x" size={16} />
+              <Icon name="x" size={16}/>
             </button>
           </div>
         </div>
 
         <div style={{ padding:"0 28px", borderBottom:"1px solid var(--border)", display:"flex", gap:4 }}>
-          {[["list","Istniejące grupy"],["create","+ Dodaj nową grupę"]].map(([k,v]) => (
+          {[
+            ["active", `Aktywne (${activeOrgs.length})`],
+            ["archived", `Archiwalne (${archivedOrgs.length})`],
+            ["create", "+ Dodaj nową grupę"]
+          ].map(([k, v]) => (
             <button
               key={k}
-              onClick={() => { setTab(k); setEditOrg(null); }}
+              onClick={() => { setTab(k); if (k !== "create") setEditOrg(null); }}
               style={{
                 padding:"10px 16px",
                 border:"none",
@@ -165,10 +174,25 @@ export function OrgManager({
         </div>
 
         <div className="modal-body">
-          {tab === "list" && (
+          {tab === "active" && (
             <OrgList
-              organizations={organizations}
+              organizations={activeOrgs}
+              archived={false}
               onEdit={org => { setEditOrg(org); setTab("create"); }}
+              onArchive={onArchiveOrg}
+              onRestore={onRestoreOrg}
+              onDelete={onDeleteOrg}
+              onExport={onExportOrg}
+            />
+          )}
+
+          {tab === "archived" && (
+            <OrgList
+              organizations={archivedOrgs}
+              archived={true}
+              onEdit={org => { setEditOrg(org); setTab("create"); }}
+              onArchive={onArchiveOrg}
+              onRestore={onRestoreOrg}
               onDelete={onDeleteOrg}
               onExport={onExportOrg}
             />
@@ -184,10 +208,13 @@ export function OrgManager({
                 } else {
                   await onCreateOrg(data);
                 }
-                setTab("list");
+                setTab("active");
                 setEditOrg(null);
               }}
-              onCancel={() => { setTab("list"); setEditOrg(null); }}
+              onCancel={() => {
+                setTab(editOrg?.archived_at ? "archived" : "active");
+                setEditOrg(null);
+              }}
             />
           )}
         </div>
@@ -196,11 +223,27 @@ export function OrgManager({
   );
 }
 
-function OrgList({ organizations, onEdit, onDelete, onExport }) {
+function OrgList({
+  organizations,
+  archived,
+  onEdit,
+  onArchive,
+  onRestore,
+  onDelete,
+  onExport
+}) {
+  if (!organizations.length) {
+    return (
+      <div style={{ fontSize:13, color:"var(--text3)" }}>
+        {archived ? "Brak zarchiwizowanych grup." : "Brak aktywnych grup."}
+      </div>
+    );
+  }
+
   return (
     <div>
       <div style={{ fontSize:13, color:"var(--text3)", marginBottom:16 }}>
-        {organizations.length} grup w systemie
+        {organizations.length} grup
       </div>
 
       <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
@@ -215,6 +258,7 @@ function OrgList({ organizations, onEdit, onDelete, onExport }) {
               borderRadius:12,
               background:"var(--bg3)",
               border:"1px solid var(--border)",
+              opacity: archived ? 0.85 : 1
             }}
           >
             <div
@@ -241,32 +285,45 @@ function OrgList({ organizations, onEdit, onDelete, onExport }) {
               {org.description && (
                 <div style={{ fontSize:12, color:"var(--text3)", marginTop:2 }}>{org.description}</div>
               )}
+              {archived && org.archived_at && (
+                <div style={{ fontSize:11, color:"var(--text3)", marginTop:4 }}>
+                  Zarchiwizowano: {new Date(org.archived_at).toLocaleString()}
+                </div>
+              )}
             </div>
 
             <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", justifyContent:"flex-end" }}>
-              <div
-                style={{
-                  width:10,
-                  height:10,
-                  borderRadius:"50%",
-                  background: org.active ? "var(--yes)" : "var(--no)"
-                }}
-              />
-              <span style={{ fontSize:11, color:"var(--text3)", marginRight:6 }}>
-                {org.active ? "Aktywna" : "Nieaktywna"}
-              </span>
+              {!archived && (
+                <>
+                  <button className="btn btn-secondary btn-sm" onClick={() => onEdit(org)}>
+                    <Icon name="edit" size={13}/> Edytuj
+                  </button>
 
-              <button className="btn btn-secondary btn-sm" onClick={() => onEdit(org)}>
-                <Icon name="edit" size={13}/> Edytuj
-              </button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => onExport(org)}>
+                    <Icon name="download" size={13}/> Backup
+                  </button>
 
-              <button className="btn btn-secondary btn-sm" onClick={() => onExport(org)}>
-                <Icon name="download" size={13}/> Backup
-              </button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => onArchive(org)}>
+                    <Icon name="archive" size={13}/> Archiwizuj
+                  </button>
+                </>
+              )}
 
-              <button className="btn btn-danger btn-sm" onClick={() => onDelete(org)}>
-                <Icon name="trash" size={13}/> Usuń
-              </button>
+              {archived && (
+                <>
+                  <button className="btn btn-secondary btn-sm" onClick={() => onExport(org)}>
+                    <Icon name="download" size={13}/> Backup
+                  </button>
+
+                  <button className="btn btn-secondary btn-sm" onClick={() => onRestore(org)}>
+                    <Icon name="refresh-cw" size={13}/> Przywróć
+                  </button>
+
+                  <button className="btn btn-danger btn-sm" onClick={() => onDelete(org)}>
+                    <Icon name="trash" size={13}/> Usuń trwale
+                  </button>
+                </>
+              )}
             </div>
           </div>
         ))}
