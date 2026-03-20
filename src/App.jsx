@@ -25,17 +25,14 @@ import { AddMemberModal }   from './components/members/AddMemberModal';
 import { OrgManager }       from './components/admin/OrgManager';
 import { SectionManager }   from './components/admin/SectionManager';
 
-// ─── ROOT ─────────────────────────────────────────────────────────────────────
 export default function AppRoot() {
   return <ToastProvider><App /></ToastProvider>;
 }
 
-// ─── APP ──────────────────────────────────────────────────────────────────────
 function App() {
   const toast = useToast();
   const [confirm, ConfirmDialog] = useConfirm();
 
-  // ─── CONFIG ──────────────────────────────────────────────────────────────
   const [config, setConfig] = useState(() => {
     if (isConfigured()) return { url: SUPABASE_URL, key: SUPABASE_KEY };
     try {
@@ -45,7 +42,6 @@ function App() {
     return null;
   });
 
-  // ─── SESSION ─────────────────────────────────────────────────────────────
   const [session, setSession] = useState(() => {
     try {
       const s = JSON.parse(localStorage.getItem("km_session") || "null");
@@ -54,7 +50,6 @@ function App() {
     return null;
   });
 
-  // ─── ORGANIZATION ────────────────────────────────────────────────────────
   const [currentOrg, setCurrentOrg] = useState(() => {
     try {
       const o = JSON.parse(localStorage.getItem("km_org") || "null");
@@ -63,7 +58,6 @@ function App() {
     return null;
   });
 
-  // ─── UI STATE ────────────────────────────────────────────────────────────
   const [view, setView] = useState("dashboard");
   const [selectedApt, setSelectedApt] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -76,7 +70,6 @@ function App() {
   const [calYear, setCalYear] = useState(new Date().getFullYear());
   const [calSelected, setCalSelected] = useState(null);
 
-  // ─── LOGOUT ──────────────────────────────────────────────────────────────
   const handleLogout = useCallback(() => {
     if (session?.token && config) {
       createAuthClient(config.url, config.key).logout(session.token);
@@ -93,13 +86,11 @@ function App() {
     handleLogout();
   }, [handleLogout, toast]);
 
-  // ─── TOKEN AUTO-REFRESH ─────────────────────────────────────────────────
   useTokenRefresh(config, session, (newSession) => {
     localStorage.setItem("km_session", JSON.stringify(newSession));
     setSession(newSession);
   });
 
-  // ─── HANDLERS ────────────────────────────────────────────────────────────
   const handleSaveConfig = useCallback((url, key) => {
     const cfg = { url: url.trim(), key: key.trim() };
     localStorage.setItem("km_config", JSON.stringify(cfg));
@@ -147,7 +138,6 @@ function App() {
     setView("dashboard");
   }, []);
 
-  // ─── DATA ────────────────────────────────────────────────────────────────
   const { data, loading, error, loadData, updateReply, revertReply, api } =
     useData(config, session, currentOrg, handleUnauthorized);
 
@@ -160,7 +150,6 @@ function App() {
     }
   }, [myOrgs, currentOrg, handleSelectOrg]);
 
-  // ─── DERIVED STATE ───────────────────────────────────────────────────────
   const currentMember = useMemo(
     () => data.members.find(m => m.email === session?.email) ?? null,
     [data.members, session?.email]
@@ -191,7 +180,70 @@ function App() {
 
   const client = useMemo(() => api(), [api]);
 
-  // ─── APPOINTMENT HANDLERS ────────────────────────────────────────────────
+  const restHeaders = useMemo(() => {
+    if (!config?.key) return null;
+    return {
+      apikey: config.key,
+      Authorization: session?.token ? `Bearer ${session.token}` : undefined,
+      "Content-Type": "application/json",
+    };
+  }, [config?.key, session?.token]);
+
+  const fetchTable = useCallback(async (path) => {
+    if (!config?.url || !restHeaders) throw new Error("Brak konfiguracji połączenia.");
+    const response = await fetch(`${config.url}/rest/v1/${path}`, {
+      headers: restHeaders
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `Błąd pobierania ${path}`);
+    }
+    return response.json();
+  }, [config?.url, restHeaders]);
+
+  const downloadJsonFile = useCallback((filename, dataToSave) => {
+    const blob = new Blob([JSON.stringify(dataToSave, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const makeImportSlug = useCallback((baseSlug) => {
+    const normalized = String(baseSlug || "")
+      .toLowerCase()
+      .trim()
+      .replace(/ą/g, "a")
+      .replace(/ć/g, "c")
+      .replace(/ę/g, "e")
+      .replace(/ł/g, "l")
+      .replace(/ń/g, "n")
+      .replace(/ó/g, "o")
+      .replace(/ś/g, "s")
+      .replace(/ź/g, "z")
+      .replace(/ż/g, "z")
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9-]/g, "")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 30);
+
+    const used = new Set((myOrgs || []).map(o => String(o.slug || "").toLowerCase()));
+    if (!used.has(normalized)) return normalized;
+
+    let counter = 2;
+    let candidate = `${normalized}-${counter}`;
+    while (used.has(candidate)) {
+      counter += 1;
+      candidate = `${normalized}-${counter}`;
+    }
+    return candidate;
+  }, [myOrgs]);
+
   const createSingleApt = useCallback(async (aptData, sectionIds, tutti, groupId = null) => {
     if (!client || !currentOrg?.id) throw new Error("Brak połączenia lub organizacji.");
 
@@ -303,7 +355,6 @@ function App() {
     }
   }, [client, getReplies, updateReply, revertReply, toast]);
 
-  // ─── MEMBER HANDLERS ─────────────────────────────────────────────────────
   const handleApproveMember = useCallback(async (pending) => {
     if (!client || !currentOrg?.id) return;
 
@@ -394,7 +445,6 @@ function App() {
     }
   }, [client, currentOrg?.id, currentMember?.email, loadData, toast]);
 
-  // ─── SECTION HANDLERS ────────────────────────────────────────────────────
   const handleAddSection = useCallback(async (sectionData) => {
     if (!client || !currentOrg?.id) return;
 
@@ -447,7 +497,6 @@ function App() {
     }
   }, [client, loadData, toast]);
 
-  // ─── ORG HANDLERS ────────────────────────────────────────────────────────
   const handleCreateOrg = useCallback(async (formData) => {
     if (!client) return;
 
@@ -574,7 +623,199 @@ function App() {
     }
   }, [client, confirm, currentOrg?.id, loadData, reloadOrgs, toast]);
 
-  // ─── RENDER GUARDS ───────────────────────────────────────────────────────
+  const handleExportOrg = useCallback(async (org) => {
+    try {
+      const organization = org;
+
+      const sections = await fetchTable(`sections?organization_id=eq.${org.id}&select=*`);
+      const members = await fetchTable(`members?organization_id=eq.${org.id}&select=*`);
+      const appointments = await fetchTable(`appointments?organization_id=eq.${org.id}&select=*`);
+      const pending = await fetchTable(`pending_registrations?organization_id=eq.${org.id}&select=*`);
+
+      const appointmentIds = appointments.map(a => a.id);
+      const memberIds = members.map(m => m.id);
+
+      let appointmentSections = [];
+      let replies = [];
+
+      if (appointmentIds.length > 0) {
+        appointmentSections = await fetchTable(`appointment_sections?appointment_id=in.(${appointmentIds.join(",")})&select=*`);
+      }
+
+      if (appointmentIds.length > 0 && memberIds.length > 0) {
+        replies = await fetchTable(`replies?appointment_id=in.(${appointmentIds.join(",")})&select=*`);
+      }
+
+      const backup = {
+        meta: {
+          version: 1,
+          exported_at: new Date().toISOString(),
+          source_org_id: org.id,
+        },
+        organization,
+        sections,
+        members,
+        appointments,
+        appointment_sections: appointmentSections,
+        replies,
+        pending_registrations: pending,
+      };
+
+      const filename = `backup-${String(org.slug || "grupa")}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`;
+      downloadJsonFile(filename, backup);
+      toast.success(`Backup grupy "${org.name}" został pobrany.`);
+    } catch (e) {
+      toast.error(`Błąd backupu: ${e.message}`);
+    }
+  }, [downloadJsonFile, fetchTable, toast]);
+
+  const handleImportOrg = useCallback(async (file) => {
+    if (!client) return;
+
+    const text = await file.text();
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      toast.error("Nieprawidłowy plik JSON.");
+      return;
+    }
+
+    const backupOrg = parsed?.organization;
+    if (!backupOrg?.name) {
+      toast.error("Plik backupu nie zawiera danych organizacji.");
+      return;
+    }
+
+    const ok = await confirm({
+      title: "Przywróć backup",
+      message: `Czy przywrócić backup grupy "${backupOrg.name}"? Zostanie utworzona nowa grupa na podstawie pliku.`,
+      confirmLabel: "Przywróć",
+    });
+
+    if (!ok) return;
+
+    try {
+      const newSlug = makeImportSlug(backupOrg.slug || backupOrg.name);
+
+      const createdOrgRaw = await client.post("organizations", {
+        name: backupOrg.name,
+        slug: newSlug,
+        type: backupOrg.type || "other",
+        description: backupOrg.description || null,
+        color: backupOrg.color || "#C9A84C",
+        logo_emoji: backupOrg.logo_emoji || "🎼",
+        active: backupOrg.active ?? true,
+      });
+
+      const createdOrg = Array.isArray(createdOrgRaw) ? createdOrgRaw[0] : createdOrgRaw;
+      if (!createdOrg?.id) throw new Error("Nie udało się utworzyć organizacji z backupu.");
+
+      const oldToNewSectionId = {};
+      const oldToNewMemberId = {};
+      const oldToNewAppointmentId = {};
+
+      const backupSections = Array.isArray(parsed.sections) ? parsed.sections : [];
+      for (const s of backupSections) {
+        const createdSectionRaw = await client.post("sections", {
+          name: s.name,
+          color: s.color || "#888888",
+          organization_id: createdOrg.id,
+          sort_order: s.sort_order ?? null,
+        });
+        const createdSection = Array.isArray(createdSectionRaw) ? createdSectionRaw[0] : createdSectionRaw;
+        oldToNewSectionId[s.id] = createdSection.id;
+      }
+
+      const backupMembers = Array.isArray(parsed.members) ? parsed.members : [];
+      for (const m of backupMembers) {
+        const createdMemberRaw = await client.post("members", {
+          name: m.name,
+          email: m.email,
+          phone: m.phone || null,
+          section_id: m.section_id ? oldToNewSectionId[m.section_id] || null : null,
+          role: m.role || "member",
+          status: m.status || "active",
+          organization_id: createdOrg.id,
+          rodo_accepted: m.rodo_accepted ?? true,
+          terms_accepted: m.terms_accepted ?? true,
+          rodo_accepted_at: m.rodo_accepted_at || null,
+          terms_accepted_at: m.terms_accepted_at || null,
+          joined_at: m.joined_at || new Date().toISOString(),
+          approved_by: m.approved_by || session?.email || null,
+          approved_at: m.approved_at || null,
+        });
+        const createdMember = Array.isArray(createdMemberRaw) ? createdMemberRaw[0] : createdMemberRaw;
+        oldToNewMemberId[m.id] = createdMember.id;
+      }
+
+      const backupAppointments = Array.isArray(parsed.appointments) ? parsed.appointments : [];
+      for (const a of backupAppointments) {
+        const createdAppointmentRaw = await client.post("appointments", {
+          name: a.name,
+          type: a.type,
+          date_start: a.date_start,
+          date_end: a.date_end,
+          location: a.location || null,
+          description: a.description || null,
+          deadline: a.deadline || null,
+          status: a.status || "active",
+          published: a.published ?? true,
+          organization_id: createdOrg.id,
+          recurring_type: a.recurring_type || "none",
+          recurring_until: a.recurring_until || null,
+          recurring_group_id: a.recurring_group_id || null,
+        });
+        const createdAppointment = Array.isArray(createdAppointmentRaw) ? createdAppointmentRaw[0] : createdAppointmentRaw;
+        oldToNewAppointmentId[a.id] = createdAppointment.id;
+      }
+
+      const backupAppointmentSections = Array.isArray(parsed.appointment_sections) ? parsed.appointment_sections : [];
+      for (const rel of backupAppointmentSections) {
+        const newAppointmentId = oldToNewAppointmentId[rel.appointment_id];
+        const newSectionId = oldToNewSectionId[rel.section_id];
+        if (!newAppointmentId || !newSectionId) continue;
+
+        await client.post("appointment_sections", {
+          appointment_id: newAppointmentId,
+          section_id: newSectionId,
+        });
+      }
+
+      const backupReplies = Array.isArray(parsed.replies) ? parsed.replies : [];
+      for (const reply of backupReplies) {
+        const newAppointmentId = oldToNewAppointmentId[reply.appointment_id];
+        const newMemberId = oldToNewMemberId[reply.member_id];
+        if (!newAppointmentId || !newMemberId) continue;
+
+        await client.upsert("replies", {
+          appointment_id: newAppointmentId,
+          member_id: newMemberId,
+          status: reply.status || "maybe",
+        });
+      }
+
+      const backupPending = Array.isArray(parsed.pending_registrations) ? parsed.pending_registrations : [];
+      for (const p of backupPending) {
+        await client.post("pending_registrations", {
+          name: p.name,
+          email: p.email,
+          phone: p.phone || null,
+          organization_id: createdOrg.id,
+          section_id: p.section_id ? oldToNewSectionId[p.section_id] || null : null,
+          rodo_accepted: p.rodo_accepted ?? true,
+          terms_accepted: p.terms_accepted ?? true,
+          message: p.message || null,
+        });
+      }
+
+      await reloadOrgs();
+      toast.success(`Backup został przywrócony jako grupa "${createdOrg.name}" (${createdOrg.slug}).`);
+    } catch (e) {
+      toast.error(`Błąd przywracania backupu: ${e.message}`);
+    }
+  }, [client, confirm, makeImportSlug, reloadOrgs, session?.email, toast]);
+
   if (!config) {
     return (
       <>
@@ -771,6 +1012,8 @@ function App() {
           onCreateOrg={handleCreateOrg}
           onUpdateOrg={handleUpdateOrg}
           onDeleteOrg={handleDeleteOrg}
+          onExportOrg={handleExportOrg}
+          onImportOrg={handleImportOrg}
           onClose={() => setShowOrgManager(false)}
         />
       )}
