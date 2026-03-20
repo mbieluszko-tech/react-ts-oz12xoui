@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { Icon } from '../common/Icon';
-import { ORG_TYPE_LABELS } from '../../config';
+import { ORG_TYPE_LABELS, validators } from '../../config';
+import { normalizeSlug, makeUniqueSlug } from '../../services/orgService';
 
 const DEFAULT_SECTIONS = {
   orchestra: [
@@ -45,49 +46,6 @@ const ORG_EMOJIS = {
   orchestra:"🎼", choir:"🎵", ensemble:"🎭", vocal:"🎤", band:"🎸", other:"🎪"
 };
 
-function normalizeSlug(value) {
-  return (value || "")
-    .toLowerCase()
-    .trim()
-    .replace(/ą/g, "a")
-    .replace(/ć/g, "c")
-    .replace(/ę/g, "e")
-    .replace(/ł/g, "l")
-    .replace(/ń/g, "n")
-    .replace(/ó/g, "o")
-    .replace(/ś/g, "s")
-    .replace(/ź/g, "z")
-    .replace(/ż/g, "z")
-    .replace(/\s+/g, "-")
-    .replace(/[^a-z0-9-]/g, "")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 30);
-}
-
-function makeUniqueSlug(baseSlug, organizations, currentOrgId = null) {
-  const cleanBase = normalizeSlug(baseSlug);
-  if (!cleanBase) return "";
-
-  const usedSlugs = new Set(
-    (organizations || [])
-      .filter(org => org?.id !== currentOrgId)
-      .map(org => String(org.slug || "").toLowerCase())
-  );
-
-  if (!usedSlugs.has(cleanBase)) return cleanBase;
-
-  let counter = 2;
-  let candidate = `${cleanBase}-${counter}`;
-
-  while (usedSlugs.has(candidate)) {
-    counter += 1;
-    candidate = `${cleanBase}-${counter}`;
-  }
-
-  return candidate;
-}
-
 export function OrgManager({
   organizations,
   onCreateOrg,
@@ -119,11 +77,7 @@ export function OrgManager({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div
-        className="modal modal-wide"
-        style={{ maxWidth: 920 }}
-        onClick={e => e.stopPropagation()}
-      >
+      <div className="modal modal-wide" style={{ maxWidth: 980 }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <div className="modal-title">⚙️ Zarządzanie grupami ACK</div>
           <div style={{ display:"flex", gap:8, alignItems:"center" }}>
@@ -134,10 +88,7 @@ export function OrgManager({
               style={{ display:"none" }}
               onChange={handleImportFile}
             />
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={() => fileInputRef.current?.click()}
-            >
+            <button className="btn btn-secondary btn-sm" onClick={() => fileInputRef.current?.click()}>
               <Icon name="upload" size={13}/> Przywróć backup
             </button>
             <button className="btn btn-ghost btn-sm" aria-label="Zamknij" onClick={onClose}>
@@ -341,6 +292,8 @@ function OrgForm({ organizations = [], editOrg, onSave, onCancel }) {
     color: editOrg?.color || "#C9A84C",
     logo_emoji: editOrg?.logo_emoji || "🎼",
     active: editOrg?.active ?? true,
+    admin_email: "",
+    admin_name: "",
   });
 
   const [sections, setSections] = useState(
@@ -394,8 +347,14 @@ function OrgForm({ organizations = [], editOrg, onSave, onCancel }) {
     org => org?.id !== currentEditId && String(org.slug || "").toLowerCase() === String(form.slug || "").toLowerCase()
   );
 
+  const adminEmailInvalid =
+    !editOrg &&
+    form.admin_email &&
+    !validators.email(form.admin_email);
+
   const handleSubmit = async () => {
-    if (!form.name || !form.slug || slugTaken) return;
+    if (!form.name || !form.slug || slugTaken || adminEmailInvalid) return;
+
     setSaving(true);
     try {
       await onSave({
@@ -407,7 +366,7 @@ function OrgForm({ organizations = [], editOrg, onSave, onCancel }) {
     }
   };
 
-  const valid = form.name.trim().length > 1 && form.slug.length > 1 && !slugTaken;
+  const valid = form.name.trim().length > 1 && form.slug.length > 1 && !slugTaken && !adminEmailInvalid;
 
   return (
     <div>
@@ -488,6 +447,39 @@ function OrgForm({ organizations = [], editOrg, onSave, onCancel }) {
           <input className="form-input" value={form.logo_emoji} onChange={e => setF("logo_emoji", e.target.value)} style={{ fontSize:22 }} />
         </div>
       </div>
+
+      {!editOrg && (
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">Email administratora grupy</label>
+            <input
+              className="form-input"
+              type="email"
+              placeholder="np. dyrygent@ug.edu.pl"
+              value={form.admin_email}
+              onChange={e => setF("admin_email", e.target.value)}
+            />
+            <div style={{ fontSize:12, color:"var(--text3)", marginTop:6 }}>
+              Super admin zostanie dopisany automatycznie. Tu możesz wskazać dodatkowego administratora nowej grupy.
+            </div>
+            {adminEmailInvalid && (
+              <div style={{ fontSize:12, color:"var(--no)", marginTop:6 }}>
+                Podaj poprawny adres email administratora.
+              </div>
+            )}
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Nazwa administratora (opcjonalnie)</label>
+            <input
+              className="form-input"
+              placeholder="np. Jan Kowalski"
+              value={form.admin_name}
+              onChange={e => setF("admin_name", e.target.value)}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="form-row">
         <div className="form-group">
