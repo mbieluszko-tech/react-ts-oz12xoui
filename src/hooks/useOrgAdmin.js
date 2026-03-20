@@ -2,6 +2,10 @@ import { useCallback } from 'react';
 import {
   createOrganizationWithAdmin,
   updateOrganizationWithAdmin,
+  listOrganizationAdmins,
+  promoteOrganizationMemberToAdmin,
+  demoteOrganizationAdminToMember,
+  removeOrganizationMember,
   archiveOrganization,
   restoreOrganization,
   fetchOrganizationDependencies,
@@ -66,6 +70,46 @@ export function useOrgAdmin({
       toast.error(`Błąd aktualizacji grupy: ${e.message}`);
     }
   }, [client, currentOrg, reloadOrgs, session?.email, setCurrentOrg, toast]);
+
+  const handleLoadAdmins = useCallback(async (orgId) => {
+    if (!client || !orgId) return [];
+    try {
+      return await listOrganizationAdmins(client, orgId);
+    } catch (e) {
+      toast.error(`Błąd ładowania administratorów: ${e.message}`);
+      return [];
+    }
+  }, [client, toast]);
+
+  const handlePromoteToAdmin = useCallback(async (memberId) => {
+    if (!client || !memberId) return;
+    try {
+      await promoteOrganizationMemberToAdmin(client, memberId);
+      toast.success("Użytkownik został ustawiony jako admin.");
+    } catch (e) {
+      toast.error(`Błąd nadawania roli admina: ${e.message}`);
+    }
+  }, [client, toast]);
+
+  const handleDemoteAdmin = useCallback(async (memberId) => {
+    if (!client || !memberId) return;
+    try {
+      await demoteOrganizationAdminToMember(client, memberId);
+      toast.success("Administrator został zmieniony na członka.");
+    } catch (e) {
+      toast.error(`Błąd zmiany roli: ${e.message}`);
+    }
+  }, [client, toast]);
+
+  const handleRemoveAdminFromOrg = useCallback(async (memberId) => {
+    if (!client || !memberId) return;
+    try {
+      await removeOrganizationMember(client, memberId);
+      toast.success("Administrator został usunięty z grupy.");
+    } catch (e) {
+      toast.error(`Błąd usuwania administratora: ${e.message}`);
+    }
+  }, [client, toast]);
 
   const handleArchiveOrg = useCallback(async (org) => {
     if (!client || !org?.id) return;
@@ -208,6 +252,10 @@ export function useOrgAdmin({
   return {
     handleCreateOrg,
     handleUpdateOrg,
+    handleLoadAdmins,
+    handlePromoteToAdmin,
+    handleDemoteAdmin,
+    handleRemoveAdminFromOrg,
     handleArchiveOrg,
     handleRestoreOrg,
     handleDeleteOrg,
