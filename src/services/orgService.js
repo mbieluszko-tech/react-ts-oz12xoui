@@ -41,6 +41,18 @@ export function makeUniqueSlug(baseSlug, organizations = [], currentOrgId = null
   return candidate;
 }
 
+function pickOrganizationFields(updates = {}) {
+  return {
+    name: updates.name?.trim(),
+    slug: updates.slug?.toLowerCase().trim(),
+    type: updates.type,
+    description: updates.description?.trim() || null,
+    color: updates.color || "#C9A84C",
+    logo_emoji: updates.logo_emoji || "🎼",
+    active: updates.active ?? true,
+  };
+}
+
 async function ensureOrganizationAdmin({
   client,
   organizationId,
@@ -93,13 +105,7 @@ export async function createOrganizationWithAdmin({
   currentMember,
 }) {
   const created = await client.post("organizations", {
-    name: formData.name.trim(),
-    slug: formData.slug.toLowerCase().trim(),
-    type: formData.type,
-    description: formData.description?.trim() || null,
-    color: formData.color || "#C9A84C",
-    logo_emoji: formData.logo_emoji || "🎼",
-    active: formData.active ?? true,
+    ...pickOrganizationFields(formData),
     archived_at: null,
     archived_by: null,
   });
@@ -153,11 +159,7 @@ export async function createOrganizationWithAdmin({
 }
 
 export async function updateOrganization(client, id, updates) {
-  await client.patch(`organizations?id=eq.${id}`, {
-    ...updates,
-    slug: updates.slug?.toLowerCase().trim(),
-    name: updates.name?.trim(),
-  });
+  return client.patch(`organizations?id=eq.${id}`, pickOrganizationFields(updates));
 }
 
 export async function updateOrganizationWithAdmin({
@@ -166,14 +168,16 @@ export async function updateOrganizationWithAdmin({
   updates,
   sessionEmail,
 }) {
-  await updateOrganization(client, id, updates);
+  const { admin_email, admin_name, sections, ...organizationUpdates } = updates || {};
 
-  if (updates.admin_email?.trim()) {
+  await updateOrganization(client, id, organizationUpdates);
+
+  if (admin_email?.trim()) {
     await ensureOrganizationAdmin({
       client,
       organizationId: id,
-      adminEmail: updates.admin_email,
-      adminName: updates.admin_name,
+      adminEmail: admin_email,
+      adminName: admin_name,
       approvedBy: sessionEmail || null,
     });
   }
