@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from '../common/Icon';
 import { ORG_TYPE_LABELS, validators } from '../../config';
 import { normalizeSlug, makeUniqueSlug } from '../../services/orgService';
@@ -50,6 +50,10 @@ export function OrgManager({
   organizations,
   onCreateOrg,
   onUpdateOrg,
+  onLoadAdmins,
+  onPromoteToAdmin,
+  onDemoteAdmin,
+  onRemoveAdminFromOrg,
   onArchiveOrg,
   onRestoreOrg,
   onDeleteOrg,
@@ -166,6 +170,10 @@ export function OrgManager({
                 setTab(editOrg?.archived_at ? "archived" : "active");
                 setEditOrg(null);
               }}
+              onLoadAdmins={onLoadAdmins}
+              onPromoteToAdmin={onPromoteToAdmin}
+              onDemoteAdmin={onDemoteAdmin}
+              onRemoveAdminFromOrg={onRemoveAdminFromOrg}
             />
           )}
         </div>
@@ -283,7 +291,16 @@ function OrgList({
   );
 }
 
-function OrgForm({ organizations = [], editOrg, onSave, onCancel }) {
+function OrgForm({
+  organizations = [],
+  editOrg,
+  onSave,
+  onCancel,
+  onLoadAdmins,
+  onPromoteToAdmin,
+  onDemoteAdmin,
+  onRemoveAdminFromOrg,
+}) {
   const [form, setForm] = useState({
     name: editOrg?.name || "",
     slug: editOrg?.slug || "",
@@ -300,9 +317,40 @@ function OrgForm({ organizations = [], editOrg, onSave, onCancel }) {
     DEFAULT_SECTIONS[editOrg?.type || "orchestra"]
   );
   const [saving, setSaving] = useState(false);
+  const [admins, setAdmins] = useState([]);
+  const [adminsLoading, setAdminsLoading] = useState(false);
 
   const setF = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const currentEditId = editOrg?.id ?? null;
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadAdmins() {
+      if (!editOrg?.id || !onLoadAdmins) {
+        setAdmins([]);
+        return;
+      }
+
+      setAdminsLoading(true);
+      const result = await onLoadAdmins(editOrg.id);
+      if (mounted) {
+        setAdmins(result || []);
+        setAdminsLoading(false);
+      }
+    }
+
+    loadAdmins();
+    return () => { mounted = false; };
+  }, [editOrg?.id, onLoadAdmins]);
+
+  const refreshAdmins = async () => {
+    if (!editOrg?.id || !onLoadAdmins) return;
+    setAdminsLoading(true);
+    const result = await onLoadAdmins(editOrg.id);
+    setAdmins(result || []);
+    setAdminsLoading(false);
+  };
 
   const handleNameChange = (val) => {
     setF("name", val);
@@ -348,7 +396,6 @@ function OrgForm({ organizations = [], editOrg, onSave, onCancel }) {
   );
 
   const adminEmailInvalid =
-    !editOrg &&
     form.admin_email &&
     !validators.email(form.admin_email);
 
@@ -361,9 +408,27 @@ function OrgForm({ organizations = [], editOrg, onSave, onCancel }) {
         ...form,
         sections: editOrg ? undefined : sections
       });
+      setF("admin_email", "");
+      setF("admin_name", "");
+      if (editOrg) await refreshAdmins();
     } finally {
       setSaving(false);
     }
+  };
+
+  const handlePromote = async (memberId) => {
+    await onPromoteToAdmin(memberId);
+    await refreshAdmins();
+  };
+
+  const handleDemote = async (memberId) => {
+    await onDemoteAdmin(memberId);
+    await refreshAdmins();
+  };
+
+  const handleRemove = async (memberId) => {
+    await onRemoveAdminFromOrg(memberId);
+    await refreshAdmins();
   };
 
   const valid = form.name.trim().length > 1 && form.slug.length > 1 && !slugTaken && !adminEmailInvalid;
@@ -448,36 +513,102 @@ function OrgForm({ organizations = [], editOrg, onSave, onCancel }) {
         </div>
       </div>
 
-      {!editOrg && (
-        <div className="form-row">
-          <div className="form-group">
-            <label className="form-label">Email administratora grupy</label>
-            <input
-              className="form-input"
-              type="email"
-              placeholder="np. dyrygent@ug.edu.pl"
-              value={form.admin_email}
-              onChange={e => setF("admin_email", e.target.value)}
-            />
-            <div style={{ fontSize:12, color:"var(--text3)", marginTop:6 }}>
-              Super admin zostanie dopisany automatycznie. Tu możesz wskazać dodatkowego administratora nowej grupy.
+      <div className="form-row">
+        <div className="form-group">
+          <label className="form-label">Email administratora grupy</label>
+          <input
+            className="form-input"
+            type="email"
+            placeholder="np. dyrygent@ug.edu.pl"
+            value={form.admin_email}
+            onChange={e => setF("admin_email", e.target.value)}
+          />
+          <div style={{ fontSize:12, color:"var(--text3)", marginTop:6 }}>
+            {editOrg
+              ? "Wpisz email, aby dodać nowego administratora lub nadać rolę admina istniejącemu członkowi."
+              : "Super admin zostanie dopisany automatycznie. Tu możesz wskazać dodatkowego administratora nowej grupy."}
+          </div>
+          {adminEmailInvalid && (
+            <div style={{ fontSize:12, color:"var(--no)", marginTop:6 }}>
+              Podaj poprawny adres email administratora.
             </div>
-            {adminEmailInvalid && (
-              <div style={{ fontSize:12, color:"var(--no)", marginTop:6 }}>
-                Podaj poprawny adres email administratora.
-              </div>
-            )}
+          )}
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Nazwa administratora (opcjonalnie)</label>
+          <input
+            className="form-input"
+            placeholder="np. Jan Kowalski"
+            value={form.admin_name}
+            onChange={e => setF("admin_name", e.target.value)}
+          />
+        </div>
+      </div>
+
+      {editOrg && (
+        <div style={{ marginBottom:24 }}>
+          <div style={{ fontSize:13, fontWeight:600, color:"var(--text3)", textTransform:"uppercase", letterSpacing:".07em", marginBottom:12 }}>
+            Administratorzy grupy
           </div>
 
-          <div className="form-group">
-            <label className="form-label">Nazwa administratora (opcjonalnie)</label>
-            <input
-              className="form-input"
-              placeholder="np. Jan Kowalski"
-              value={form.admin_name}
-              onChange={e => setF("admin_name", e.target.value)}
-            />
-          </div>
+          {adminsLoading ? (
+            <div style={{ fontSize:13, color:"var(--text3)" }}>Ładowanie administratorów...</div>
+          ) : admins.length === 0 ? (
+            <div style={{ fontSize:13, color:"var(--text3)" }}>Brak administratorów w tej grupie.</div>
+          ) : (
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {admins.map(admin => (
+                <div
+                  key={admin.id}
+                  style={{
+                    display:"flex",
+                    alignItems:"center",
+                    justifyContent:"space-between",
+                    gap:12,
+                    padding:"12px 14px",
+                    borderRadius:10,
+                    background:"var(--bg3)",
+                    border:"1px solid var(--border)"
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize:14, fontWeight:600, color:"var(--text)" }}>
+                      {admin.name || admin.email}
+                    </div>
+                    <div style={{ fontSize:12, color:"var(--text3)", marginTop:2 }}>
+                      {admin.email} · rola: {admin.role}
+                    </div>
+                  </div>
+
+                  <div style={{ display:"flex", gap:8, flexWrap:"wrap", justifyContent:"flex-end" }}>
+                    {admin.role !== "super_admin" && admin.role !== "admin" && (
+                      <button className="btn btn-secondary btn-sm" onClick={() => handlePromote(admin.id)}>
+                        Ustaw jako admin
+                      </button>
+                    )}
+
+                    {admin.role === "admin" && (
+                      <>
+                        <button className="btn btn-secondary btn-sm" onClick={() => handleDemote(admin.id)}>
+                          Zmień na członka
+                        </button>
+                        <button className="btn btn-danger btn-sm" onClick={() => handleRemove(admin.id)}>
+                          Usuń z grupy
+                        </button>
+                      </>
+                    )}
+
+                    {admin.role === "super_admin" && (
+                      <span style={{ fontSize:12, color:"var(--text3)", alignSelf:"center" }}>
+                        Super admin
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
