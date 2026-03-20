@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import {
   createOrganizationWithAdmin,
-  updateOrganization,
+  updateOrganizationWithAdmin,
   archiveOrganization,
   restoreOrganization,
   fetchOrganizationDependencies,
@@ -47,7 +47,12 @@ export function useOrgAdmin({
     if (!client) return;
 
     try {
-      await updateOrganization(client, id, updates);
+      await updateOrganizationWithAdmin({
+        client,
+        id,
+        updates,
+        sessionEmail: session?.email,
+      });
 
       if (currentOrg?.id === id) {
         const updated = { ...currentOrg, ...updates };
@@ -60,7 +65,7 @@ export function useOrgAdmin({
     } catch (e) {
       toast.error(`Błąd aktualizacji grupy: ${e.message}`);
     }
-  }, [client, currentOrg, reloadOrgs, setCurrentOrg, toast]);
+  }, [client, currentOrg, reloadOrgs, session?.email, setCurrentOrg, toast]);
 
   const handleArchiveOrg = useCallback(async (org) => {
     if (!client || !org?.id) return;
