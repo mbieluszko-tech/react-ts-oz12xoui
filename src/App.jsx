@@ -411,13 +411,20 @@ function App() {
     if (!client) return;
 
     try {
-      await client.patch(`members?id=eq.${id}`, updates);
+      const result = await client.patch(`members?id=eq.${id}&select=*`, updates);
+      const updated = Array.isArray(result) ? result[0] : result;
+
+      if (!updated?.id) {
+        throw new Error("Zmiana nie została zapisana. Rekord nie został zaktualizowany.");
+      }
+
       await loadData();
+      setSelectedMember(updated);
       toast.success("Dane członka zaktualizowane.");
     } catch (e) {
       toast.error(`Błąd aktualizacji: ${e.message}`);
     }
-  }, [client, loadData, toast]);
+  }, [client, loadData, toast, setSelectedMember]);
 
   const handleAddMember = useCallback(async (memberData) => {
     if (!client || !currentOrg?.id) return;
