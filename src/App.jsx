@@ -144,11 +144,16 @@ function App() {
   const { myOrgs, loadingOrgs, orgsError, reloadOrgs } =
     useMyOrgs(config, session, handleUnauthorized);
 
+  const activeMyOrgs = useMemo(
+    () => (myOrgs || []).filter(org => !org.archived_at),
+    [myOrgs]
+  );
+
   useEffect(() => {
-    if (myOrgs.length === 1 && !currentOrg) {
-      handleSelectOrg(myOrgs[0]);
+    if (activeMyOrgs.length === 1 && !currentOrg) {
+      handleSelectOrg(activeMyOrgs[0]);
     }
-  }, [myOrgs, currentOrg, handleSelectOrg]);
+  }, [activeMyOrgs, currentOrg, handleSelectOrg]);
 
   const currentMember = useMemo(
     () => data.members.find(m => m.email === session?.email) ?? null,
@@ -519,6 +524,8 @@ function App() {
         color: formData.color || "#C9A84C",
         logo_emoji: formData.logo_emoji || "🎼",
         active: formData.active ?? true,
+        archived_at: null,
+        archived_by: null,
       });
 
       const org = Array.isArray(created) ? created[0] : created;
@@ -594,14 +601,63 @@ function App() {
     }
   }, [client, currentOrg, reloadOrgs, toast]);
 
+  const handleArchiveOrg = useCallback(async (org) => {
+    if (!client || !org?.id) return;
+
+    const ok = await confirm({
+      title: "Archiwizuj grupę",
+      message: `Czy na pewno zarchiwizować grupę "${org.name}"? Grupa zniknie z aktywnej listy, ale będzie można ją przywrócić.`,
+      confirmLabel: "Archiwizuj",
+    });
+
+    if (!ok) return;
+
+    try {
+      await client.patch(`organizations?id=eq.${org.id}`, {
+        archived_at: new Date().toISOString(),
+        archived_by: session?.email || null,
+        active: false,
+      });
+
+      if (currentOrg?.id === org.id) {
+        localStorage.removeItem("km_org");
+        setCurrentOrg(null);
+        setView("dashboard");
+      }
+
+      await reloadOrgs();
+      await loadData();
+      toast.success(`Grupa "${org.name}" została zarchiwizowana.`);
+    } catch (e) {
+      toast.error(`Błąd archiwizacji grupy: ${e.message}`);
+    }
+  }, [client, confirm, currentOrg?.id, loadData, reloadOrgs, session?.email, toast]);
+
+  const handleRestoreOrg = useCallback(async (org) => {
+    if (!client || !org?.id) return;
+
+    try {
+      await client.patch(`organizations?id=eq.${org.id}`, {
+        archived_at: null,
+        archived_by: null,
+        active: true,
+      });
+
+      await reloadOrgs();
+      toast.success(`Grupa "${org.name}" została przywrócona.`);
+    } catch (e) {
+      toast.error(`Błąd przywracania grupy: ${e.message}`);
+    }
+  }, [client, reloadOrgs, toast]);
+
   const handleDeleteOrg = useCallback(async (org) => {
     if (!client || !org?.id) return;
 
     const ok = await confirm({
-      title: "Usuń grupę",
-      message: `Czy na pewno usunąć grupę "${org.name}"? Ta operacja usunie także powiązane dane i nie będzie można jej cofnąć.`,
+      title: "Usuń grupę trwale",
+      message: `Czy na pewno trwale usunąć grupę "${org.name}"? Ta operacja usunie także powiązane dane i nie będzie można jej cofnąć.`,
       danger: true,
-      confirmLabel: "Usuń grupę",
+      confirmLabel: "Usuń trwale",
     });
 
     if (!ok) return;
@@ -633,16 +689,12 @@ function App() {
       const pending = await fetchTable(`pending_registrations?organization_id=eq.${org.id}&select=*`);
 
       const appointmentIds = appointments.map(a => a.id);
-      const memberIds = members.map(m => m.id);
 
       let appointmentSections = [];
       let replies = [];
 
       if (appointmentIds.length > 0) {
         appointmentSections = await fetchTable(`appointment_sections?appointment_id=in.(${appointmentIds.join(",")})&select=*`);
-      }
-
-      if (appointmentIds.length > 0 && memberIds.length > 0) {
         replies = await fetchTable(`replies?appointment_id=in.(${appointmentIds.join(",")})&select=*`);
       }
 
@@ -706,6 +758,8 @@ function App() {
         color: backupOrg.color || "#C9A84C",
         logo_emoji: backupOrg.logo_emoji || "🎼",
         active: backupOrg.active ?? true,
+        archived_at: null,
+        archived_by: null,
       });
 
       const createdOrg = Array.isArray(createdOrgRaw) ? createdOrgRaw[0] : createdOrgRaw;
@@ -839,7 +893,7 @@ function App() {
       <>
         <style>{css}</style>
         <OrgSelectScreen
-          organizations={myOrgs}
+          organizations={activeMyOrgs}
           loading={loadingOrgs}
           error={orgsError}
           onSelect={handleSelectOrg}
@@ -870,7 +924,7 @@ function App() {
           view={view}
           setView={setView}
           onLogout={handleLogout}
-          onSwitchOrg={myOrgs.length > 1 ? handleSwitchOrg : null}
+          onSwitchOrg={activeMyOrgs.length > 1 ? handleSwitchOrg : null}
           onManageOrgs={isSuperAdmin ? () => setShowOrgManager(true) : null}
           pendingCount={data.pending.length}
         />
@@ -1011,6 +1065,8 @@ function App() {
           organizations={myOrgs}
           onCreateOrg={handleCreateOrg}
           onUpdateOrg={handleUpdateOrg}
+          onArchiveOrg={handleArchiveOrg}
+          onRestoreOrg={handleRestoreOrg}
           onDeleteOrg={handleDeleteOrg}
           onExportOrg={handleExportOrg}
           onImportOrg={handleImportOrg}
