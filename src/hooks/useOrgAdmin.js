@@ -1,120 +1,53 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback } from 'react';
 import {
-  buildOrgFilename,
-  createOrgApi,
-  createRestFetcher,
-  createOrganizationBundle,
+  createOrganizationWithAdmin,
+  updateOrganization,
   archiveOrganization,
   restoreOrganization,
-  deleteOrganizationSafely,
+  fetchOrganizationDependencies,
+  deleteOrganizationPermanently,
   exportOrganizationBackup,
   importOrganizationBackup,
-  duplicateOrganizationStructure,
-  downloadJsonFile,
-  getOrganizationStats,
 } from '../services/orgService';
-import { validators } from '../config';
 
 export function useOrgAdmin({
-  config,
-  session,
-  myOrgs,
-  currentOrg,
-  currentMember,
-  onUnauthorized,
-  reloadOrgs,
-  loadData,
-  setCurrentOrg,
-  setView,
+  client,
   toast,
   confirm,
+  fetchTable,
+  reloadOrgs,
+  loadData,
+  currentOrg,
+  setCurrentOrg,
+  setView,
+  session,
+  currentMember,
+  makeImportSlug,
+  downloadJsonFile,
 }) {
-  const [orgStats, setOrgStats] = useState({});
-  const [statsLoading, setStatsLoading] = useState(false);
-
-  const client = useMemo(
-    () => createOrgApi(config, session, onUnauthorized),
-    [config, session, onUnauthorized]
-  );
-
-  const fetchTable = useMemo(
-    () => createRestFetcher(config, session),
-    [config, session]
-  );
-
-  const loadOrgStats = useCallback(async () => {
-    if (!myOrgs?.length || !config || !session) {
-      setOrgStats({});
-      return;
-    }
-
-    setStatsLoading(true);
-    try {
-      const stats = await getOrganizationStats(
-        fetchTable,
-        myOrgs.map(org => org.id)
-      );
-      setOrgStats(stats);
-    } catch {
-      setOrgStats({});
-    } finally {
-      setStatsLoading(false);
-    }
-  }, [myOrgs, config, session, fetchTable]);
-
-  useEffect(() => {
-    loadOrgStats();
-  }, [loadOrgStats]);
-
   const handleCreateOrg = useCallback(async (formData) => {
     if (!client) return;
 
-    if (!validators.slug(formData.slug)) {
-      toast.error("Nieprawidłowy slug.");
-      return;
-    }
-
-    if (!validators.name(formData.name)) {
-      toast.error("Nazwa za krótka.");
-      return;
-    }
-
-    if (formData.admin_email && !validators.email(formData.admin_email)) {
-      toast.error("Nieprawidłowy email administratora.");
-      return;
-    }
-
     try {
-      const org = await createOrganizationBundle({
+      const org = await createOrganizationWithAdmin({
         client,
         formData,
         sessionEmail: session?.email,
-        currentMemberName: currentMember?.name,
-        currentMemberPhone: currentMember?.phone,
+        currentMember,
       });
 
       await reloadOrgs();
-      await loadOrgStats();
       toast.success(`Grupa "${org.name}" utworzona.`);
     } catch (e) {
       toast.error(`Błąd tworzenia grupy: ${e.message}`);
     }
-  }, [client, currentMember?.name, currentMember?.phone, loadOrgStats, reloadOrgs, session?.email, toast]);
+  }, [client, currentMember, reloadOrgs, session?.email, toast]);
 
   const handleUpdateOrg = useCallback(async (id, updates) => {
     if (!client) return;
 
-    if (updates.slug && !validators.slug(updates.slug)) {
-      toast.error("Nieprawidłowy slug.");
-      return;
-    }
-
     try {
-      await client.patch(`organizations?id=eq.${id}`, {
-        ...updates,
-        slug: updates.slug?.toLowerCase().trim(),
-        name: updates.name?.trim(),
-      });
+      await updateOrganization(client, id, updates);
 
       if (currentOrg?.id === id) {
         const updated = { ...currentOrg, ...updates };
@@ -123,12 +56,11 @@ export function useOrgAdmin({
       }
 
       await reloadOrgs();
-      await loadOrgStats();
       toast.success("Dane grupy zaktualizowane.");
     } catch (e) {
       toast.error(`Błąd aktualizacji grupy: ${e.message}`);
     }
-  }, [client, currentOrg, loadOrgStats, reloadOrgs, setCurrentOrg, toast]);
+  }, [client, currentOrg, reloadOrgs, setCurrentOrg, toast]);
 
   const handleArchiveOrg = useCallback(async (org) => {
     if (!client || !org?.id) return;
@@ -142,7 +74,11 @@ export function useOrgAdmin({
     if (!ok) return;
 
     try {
-      await archiveOrganization(client, org, session?.email);
+      await archiveOrganization({
+        client,
+        orgId: org.id,
+        archivedBy: session?.email || null,
+      });
 
       if (currentOrg?.id === org.id) {
         localStorage.removeItem("km_org");
@@ -151,36 +87,34 @@ export function useOrgAdmin({
       }
 
       await reloadOrgs();
-      await loadOrgStats();
       await loadData();
       toast.success(`Grupa "${org.name}" została zarchiwizowana.`);
     } catch (e) {
       toast.error(`Błąd archiwizacji grupy: ${e.message}`);
     }
-  }, [client, confirm, currentOrg?.id, loadData, loadOrgStats, reloadOrgs, session?.email, setCurrentOrg, setView, toast]);
+  }, [client, confirm, currentOrg?.id, loadData, reloadOrgs, session?.email, setCurrentOrg, setView, toast]);
 
   const handleRestoreOrg = useCallback(async (org) => {
     if (!client || !org?.id) return;
 
     try {
-      await restoreOrganization(client, org);
+      await restoreOrganization({ client, orgId: org.id });
       await reloadOrgs();
-      await loadOrgStats();
       toast.success(`Grupa "${org.name}" została przywrócona.`);
     } catch (e) {
       toast.error(`Błąd przywracania grupy: ${e.message}`);
     }
-  }, [client, loadOrgStats, reloadOrgs, toast]);
+  }, [client, reloadOrgs, toast]);
 
   const handleDeleteOrg = useCallback(async (org) => {
     if (!client || !org?.id) return;
 
     try {
-      const counts = orgStats[org.id] || { members: 0, appointments: 0, sections: 0 };
+      const deps = await fetchOrganizationDependencies(fetchTable, org.id);
 
-      if (counts.members > 0 || counts.appointments > 0 || counts.sections > 0) {
+      if (deps.membersCount > 0 || deps.appointmentsCount > 0 || deps.sectionsCount > 0) {
         toast.error(
-          `Nie można usunąć grupy "${org.name}". Zawiera dane: członkowie: ${counts.members}, terminy: ${counts.appointments}, sekcje: ${counts.sections}. Najpierw usuń dane lub pozostaw grupę w archiwum.`
+          `Nie można usunąć grupy "${org.name}". Zawiera dane: członkowie: ${deps.membersCount}, terminy: ${deps.appointmentsCount}, sekcje: ${deps.sectionsCount}.`
         );
         return;
       }
@@ -194,7 +128,7 @@ export function useOrgAdmin({
 
       if (!ok) return;
 
-      await deleteOrganizationSafely(client, fetchTable, org);
+      await deleteOrganizationPermanently(client, org.id);
 
       if (currentOrg?.id === org.id) {
         localStorage.removeItem("km_org");
@@ -203,30 +137,27 @@ export function useOrgAdmin({
       }
 
       await reloadOrgs();
-      await loadOrgStats();
       await loadData();
       toast.success(`Grupa "${org.name}" została usunięta.`);
     } catch (e) {
-      if (e?.details) {
-        toast.error(
-          `Nie można usunąć grupy "${org.name}". Zawiera dane: członkowie: ${e.details.members}, terminy: ${e.details.appointments}, sekcje: ${e.details.sections}.`
-        );
-        return;
-      }
       toast.error(`Błąd usuwania grupy: ${e.message}`);
     }
-  }, [client, confirm, currentOrg?.id, fetchTable, loadData, loadOrgStats, orgStats, reloadOrgs, setCurrentOrg, setView, toast]);
+  }, [client, confirm, currentOrg?.id, fetchTable, loadData, reloadOrgs, setCurrentOrg, setView, toast]);
 
   const handleExportOrg = useCallback(async (org) => {
     try {
-      const backup = await exportOrganizationBackup(fetchTable, org);
-      const filename = buildOrgFilename("backup", org.slug);
+      const backup = await exportOrganizationBackup({
+        fetchTable,
+        organization: org,
+      });
+
+      const filename = `backup-${String(org.slug || "grupa")}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`;
       downloadJsonFile(filename, backup);
       toast.success(`Backup grupy "${org.name}" został pobrany.`);
     } catch (e) {
       toast.error(`Błąd backupu: ${e.message}`);
     }
-  }, [fetchTable, toast]);
+  }, [downloadJsonFile, fetchTable, toast]);
 
   const handleImportOrg = useCallback(async (file) => {
     if (!client) return;
@@ -258,51 +189,18 @@ export function useOrgAdmin({
       const createdOrg = await importOrganizationBackup({
         client,
         parsed,
-        existingOrgs: myOrgs,
+        makeImportSlug,
         sessionEmail: session?.email,
       });
 
       await reloadOrgs();
-      await loadOrgStats();
       toast.success(`Backup został przywrócony jako grupa "${createdOrg.name}" (${createdOrg.slug}).`);
     } catch (e) {
       toast.error(`Błąd przywracania backupu: ${e.message}`);
     }
-  }, [client, confirm, loadOrgStats, myOrgs, reloadOrgs, session?.email, toast]);
-
-  const handleDuplicateOrg = useCallback(async (org) => {
-    if (!client || !org?.id) return;
-
-    try {
-      const ok = await confirm({
-        title: "Duplikuj grupę",
-        message: `Czy utworzyć kopię grupy "${org.name}"? Zostanie skopiowana struktura grupy i sekcje, bez terminów i historii odpowiedzi.`,
-        confirmLabel: "Duplikuj",
-      });
-
-      if (!ok) return;
-
-      const newOrg = await duplicateOrganizationStructure({
-        client,
-        fetchTable,
-        org,
-        existingOrgs: myOrgs,
-        sessionEmail: session?.email,
-        currentMemberName: currentMember?.name,
-        currentMemberPhone: currentMember?.phone,
-      });
-
-      await reloadOrgs();
-      await loadOrgStats();
-      toast.success(`Utworzono kopię grupy: "${newOrg.name}".`);
-    } catch (e) {
-      toast.error(`Błąd duplikowania grupy: ${e.message}`);
-    }
-  }, [client, confirm, currentMember?.name, currentMember?.phone, fetchTable, loadOrgStats, myOrgs, reloadOrgs, session?.email, toast]);
+  }, [client, confirm, makeImportSlug, reloadOrgs, session?.email, toast]);
 
   return {
-    orgStats,
-    statsLoading,
     handleCreateOrg,
     handleUpdateOrg,
     handleArchiveOrg,
@@ -310,7 +208,5 @@ export function useOrgAdmin({
     handleDeleteOrg,
     handleExportOrg,
     handleImportOrg,
-    handleDuplicateOrg,
-    reloadOrgStats: loadOrgStats,
   };
 }
