@@ -651,6 +651,60 @@ function App() {
   }, [client, reloadOrgs, toast]);
 
   const handleDeleteOrg = useCallback(async (org) => {
+  if (!client || !org?.id) return;
+
+  try {
+    // 🔍 SPRAWDZENIE POWIĄZAŃ
+    const [members, appointments, sections] = await Promise.all([
+      fetchTable(`members?organization_id=eq.${org.id}&select=id`),
+      fetchTable(`appointments?organization_id=eq.${org.id}&select=id`),
+      fetchTable(`sections?organization_id=eq.${org.id}&select=id`),
+    ]);
+
+    const membersCount = members?.length || 0;
+    const appointmentsCount = appointments?.length || 0;
+    const sectionsCount = sections?.length || 0;
+
+    // ❌ BLOKADA USUWANIA
+    if (membersCount > 0 || appointmentsCount > 0 || sectionsCount > 0) {
+      toast.error(
+        `Nie można usunąć grupy "${org.name}".\n` +
+        `Zawiera dane:\n` +
+        `• członkowie: ${membersCount}\n` +
+        `• terminy: ${appointmentsCount}\n` +
+        `• sekcje: ${sectionsCount}\n\n` +
+        `Najpierw zarchiwizuj lub usuń dane.`
+      );
+      return;
+    }
+
+    // ⚠️ POTWIERDZENIE
+    const ok = await confirm({
+      title: "Usuń grupę trwale",
+      message: `Czy na pewno trwale usunąć grupę "${org.name}"?\n\nTa operacja jest NIEODWRACALNA.`,
+      danger: true,
+      confirmLabel: "Usuń trwale",
+    });
+
+    if (!ok) return;
+
+    // 🗑️ USUWANIE
+    await client.delete(`organizations?id=eq.${org.id}`);
+
+    if (currentOrg?.id === org.id) {
+      localStorage.removeItem("km_org");
+      setCurrentOrg(null);
+      setView("dashboard");
+    }
+
+    await reloadOrgs();
+    await loadData();
+
+    toast.success(`Grupa "${org.name}" została usunięta.`);
+  } catch (e) {
+    toast.error(`Błąd usuwania grupy: ${e.message}`);
+  }
+}, [client, confirm, currentOrg?.id, loadData, reloadOrgs, toast, fetchTable]);
     if (!client || !org?.id) return;
 
     const ok = await confirm({
