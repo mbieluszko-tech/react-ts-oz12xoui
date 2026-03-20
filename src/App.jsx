@@ -5,25 +5,27 @@ import { SUPABASE_URL, SUPABASE_KEY, isConfigured, validators } from './config';
 import { createAuthClient } from './utils/api';
 import { useData, useMyOrgs, useTokenRefresh } from './hooks/useData';
 import { useConfirm } from './components/common/ConfirmModal';
+import { useOrgAdmin } from './hooks/useOrgAdmin';
+import { makeUniqueSlug, normalizeSlug } from './services/orgService';
 import { css } from './styles';
 
-import { SetupScreen }      from './components/auth/SetupScreen';
-import { AuthScreen }       from './components/auth/AuthScreen';
-import { PendingScreen }    from './components/auth/PendingScreen';
-import { OrgSelectScreen }  from './components/auth/OrgSelectScreen';
-import { Sidebar }          from './components/layout/Sidebar';
-import { Dashboard }        from './components/dashboard/Dashboard';
-import { CalendarView }     from './components/calendar/CalendarView';
+import { SetupScreen } from './components/auth/SetupScreen';
+import { AuthScreen } from './components/auth/AuthScreen';
+import { PendingScreen } from './components/auth/PendingScreen';
+import { OrgSelectScreen } from './components/auth/OrgSelectScreen';
+import { Sidebar } from './components/layout/Sidebar';
+import { Dashboard } from './components/dashboard/Dashboard';
+import { CalendarView } from './components/calendar/CalendarView';
 import { AppointmentsView } from './components/appointments/AppointmentsView';
-import { MembersView }      from './components/members/MembersView';
-import { PendingView }      from './components/members/PendingView';
-import { StatsView }        from './components/stats/StatsView';
-import { AptModal }         from './components/appointments/AptModal';
-import { CreateModal }      from './components/appointments/CreateModal';
-import { MemberModal }      from './components/members/MemberModal';
-import { AddMemberModal }   from './components/members/AddMemberModal';
-import { OrgManager }       from './components/admin/OrgManager';
-import { SectionManager }   from './components/admin/SectionManager';
+import { MembersView } from './components/members/MembersView';
+import { PendingView } from './components/members/PendingView';
+import { StatsView } from './components/stats/StatsView';
+import { AptModal } from './components/appointments/AptModal';
+import { CreateModal } from './components/appointments/CreateModal';
+import { MemberModal } from './components/members/MemberModal';
+import { AddMemberModal } from './components/members/AddMemberModal';
+import { OrgManager } from './components/admin/OrgManager';
+import { SectionManager } from './components/admin/SectionManager';
 
 export default function AppRoot() {
   return <ToastProvider><App /></ToastProvider>;
@@ -219,35 +221,32 @@ function App() {
   }, []);
 
   const makeImportSlug = useCallback((baseSlug) => {
-    const normalized = String(baseSlug || "")
-      .toLowerCase()
-      .trim()
-      .replace(/ą/g, "a")
-      .replace(/ć/g, "c")
-      .replace(/ę/g, "e")
-      .replace(/ł/g, "l")
-      .replace(/ń/g, "n")
-      .replace(/ó/g, "o")
-      .replace(/ś/g, "s")
-      .replace(/ź/g, "z")
-      .replace(/ż/g, "z")
-      .replace(/\s+/g, "-")
-      .replace(/[^a-z0-9-]/g, "")
-      .replace(/-+/g, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 30);
-
-    const used = new Set((myOrgs || []).map(o => String(o.slug || "").toLowerCase()));
-    if (!used.has(normalized)) return normalized;
-
-    let counter = 2;
-    let candidate = `${normalized}-${counter}`;
-    while (used.has(candidate)) {
-      counter += 1;
-      candidate = `${normalized}-${counter}`;
-    }
-    return candidate;
+    return makeUniqueSlug(normalizeSlug(baseSlug), myOrgs);
   }, [myOrgs]);
+
+  const {
+    handleCreateOrg,
+    handleUpdateOrg,
+    handleArchiveOrg,
+    handleRestoreOrg,
+    handleDeleteOrg,
+    handleExportOrg,
+    handleImportOrg,
+  } = useOrgAdmin({
+    client,
+    toast,
+    confirm,
+    fetchTable,
+    reloadOrgs,
+    loadData,
+    currentOrg,
+    setCurrentOrg,
+    setView,
+    session,
+    currentMember,
+    makeImportSlug,
+    downloadJsonFile,
+  });
 
   const createSingleApt = useCallback(async (aptData, sectionIds, tutti, groupId = null) => {
     if (!client || !currentOrg?.id) throw new Error("Brak połączenia lub organizacji.");
@@ -501,428 +500,6 @@ function App() {
       toast.error(`Błąd kolejności: ${e.message}`);
     }
   }, [client, loadData, toast]);
-
-  const handleCreateOrg = useCallback(async (formData) => {
-    if (!client) return;
-
-    if (!validators.slug(formData.slug)) {
-      toast.error("Nieprawidłowy slug.");
-      return;
-    }
-
-    if (!validators.name(formData.name)) {
-      toast.error("Nazwa za krótka.");
-      return;
-    }
-
-    try {
-      const created = await client.post("organizations", {
-        name: formData.name.trim(),
-        slug: formData.slug.toLowerCase().trim(),
-        type: formData.type,
-        description: formData.description?.trim() || null,
-        color: formData.color || "#C9A84C",
-        logo_emoji: formData.logo_emoji || "🎼",
-        active: formData.active ?? true,
-        archived_at: null,
-        archived_by: null,
-      });
-
-      const org = Array.isArray(created) ? created[0] : created;
-      if (!org?.id) {
-        throw new Error("Nie udało się utworzyć organizacji.");
-      }
-
-      const secs = (formData.sections || []).filter(s => s.name?.trim());
-      if (secs.length) {
-        await client.post(
-          "sections",
-          secs.map(s => ({
-            name: s.name.trim(),
-            color: s.color || "#888",
-            organization_id: org.id,
-          }))
-        );
-      }
-
-      if (session?.email) {
-        try {
-          await client.post("members", {
-            name: currentMember?.name || session.email,
-            email: session.email,
-            phone: currentMember?.phone || null,
-            section_id: null,
-            role: "super_admin",
-            status: "active",
-            organization_id: org.id,
-            rodo_accepted: true,
-            terms_accepted: true,
-            joined_at: new Date().toISOString(),
-            approved_by: session.email,
-            approved_at: new Date().toISOString(),
-          });
-        } catch (membershipError) {
-          toast.info(`Grupa została utworzona, ale nie udało się automatycznie przypisać Cię do niej: ${membershipError.message}`);
-        }
-      }
-
-      await reloadOrgs();
-      toast.success(`Grupa "${formData.name}" utworzona.`);
-    } catch (e) {
-      toast.error(`Błąd tworzenia grupy: ${e.message}`);
-    }
-  }, [client, currentMember?.name, currentMember?.phone, reloadOrgs, session?.email, toast]);
-
-  const handleUpdateOrg = useCallback(async (id, updates) => {
-    if (!client) return;
-
-    if (updates.slug && !validators.slug(updates.slug)) {
-      toast.error("Nieprawidłowy slug.");
-      return;
-    }
-
-    try {
-      await client.patch(`organizations?id=eq.${id}`, {
-        ...updates,
-        slug: updates.slug?.toLowerCase().trim(),
-        name: updates.name?.trim(),
-      });
-
-      if (currentOrg?.id === id) {
-        const updated = { ...currentOrg, ...updates };
-        localStorage.setItem("km_org", JSON.stringify(updated));
-        setCurrentOrg(updated);
-      }
-
-      await reloadOrgs();
-      toast.success("Dane grupy zaktualizowane.");
-    } catch (e) {
-      toast.error(`Błąd aktualizacji grupy: ${e.message}`);
-    }
-  }, [client, currentOrg, reloadOrgs, toast]);
-
-  const handleArchiveOrg = useCallback(async (org) => {
-    if (!client || !org?.id) return;
-
-    const ok = await confirm({
-      title: "Archiwizuj grupę",
-      message: `Czy na pewno zarchiwizować grupę "${org.name}"? Grupa zniknie z aktywnej listy, ale będzie można ją przywrócić.`,
-      confirmLabel: "Archiwizuj",
-    });
-
-    if (!ok) return;
-
-    try {
-      await client.patch(`organizations?id=eq.${org.id}`, {
-        archived_at: new Date().toISOString(),
-        archived_by: session?.email || null,
-        active: false,
-      });
-
-      if (currentOrg?.id === org.id) {
-        localStorage.removeItem("km_org");
-        setCurrentOrg(null);
-        setView("dashboard");
-      }
-
-      await reloadOrgs();
-      await loadData();
-      toast.success(`Grupa "${org.name}" została zarchiwizowana.`);
-    } catch (e) {
-      toast.error(`Błąd archiwizacji grupy: ${e.message}`);
-    }
-  }, [client, confirm, currentOrg?.id, loadData, reloadOrgs, session?.email, toast]);
-
-  const handleRestoreOrg = useCallback(async (org) => {
-    if (!client || !org?.id) return;
-
-    try {
-      await client.patch(`organizations?id=eq.${org.id}`, {
-        archived_at: null,
-        archived_by: null,
-        active: true,
-      });
-
-      await reloadOrgs();
-      toast.success(`Grupa "${org.name}" została przywrócona.`);
-    } catch (e) {
-      toast.error(`Błąd przywracania grupy: ${e.message}`);
-    }
-  }, [client, reloadOrgs, toast]);
-
-  const handleDeleteOrg = useCallback(async (org) => {
-  if (!client || !org?.id) return;
-
-  try {
-    // 🔍 SPRAWDZENIE POWIĄZAŃ
-    const [members, appointments, sections] = await Promise.all([
-      fetchTable(`members?organization_id=eq.${org.id}&select=id`),
-      fetchTable(`appointments?organization_id=eq.${org.id}&select=id`),
-      fetchTable(`sections?organization_id=eq.${org.id}&select=id`),
-    ]);
-
-    const membersCount = members?.length || 0;
-    const appointmentsCount = appointments?.length || 0;
-    const sectionsCount = sections?.length || 0;
-
-    // ❌ BLOKADA USUWANIA
-    if (membersCount > 0 || appointmentsCount > 0 || sectionsCount > 0) {
-      toast.error(
-        `Nie można usunąć grupy "${org.name}".\n` +
-        `Zawiera dane:\n` +
-        `• członkowie: ${membersCount}\n` +
-        `• terminy: ${appointmentsCount}\n` +
-        `• sekcje: ${sectionsCount}\n\n` +
-        `Najpierw zarchiwizuj lub usuń dane.`
-      );
-      return;
-    }
-
-    // ⚠️ POTWIERDZENIE
-    const ok = await confirm({
-      title: "Usuń grupę trwale",
-      message: `Czy na pewno trwale usunąć grupę "${org.name}"?\n\nTa operacja jest NIEODWRACALNA.`,
-      danger: true,
-      confirmLabel: "Usuń trwale",
-    });
-
-    if (!ok) return;
-
-    // 🗑️ USUWANIE
-    await client.delete(`organizations?id=eq.${org.id}`);
-
-    if (currentOrg?.id === org.id) {
-      localStorage.removeItem("km_org");
-      setCurrentOrg(null);
-      setView("dashboard");
-    }
-
-    await reloadOrgs();
-    await loadData();
-
-    toast.success(`Grupa "${org.name}" została usunięta.`);
-  } catch (e) {
-    toast.error(`Błąd usuwania grupy: ${e.message}`);
-  }
-}, [client, confirm, currentOrg?.id, loadData, reloadOrgs, toast, fetchTable]);
-    if (!client || !org?.id) return;
-
-    const ok = await confirm({
-      title: "Usuń grupę trwale",
-      message: `Czy na pewno trwale usunąć grupę "${org.name}"? Ta operacja usunie także powiązane dane i nie będzie można jej cofnąć.`,
-      danger: true,
-      confirmLabel: "Usuń trwale",
-    });
-
-    if (!ok) return;
-
-    try {
-      await client.delete(`organizations?id=eq.${org.id}`);
-
-      if (currentOrg?.id === org.id) {
-        localStorage.removeItem("km_org");
-        setCurrentOrg(null);
-        setView("dashboard");
-      }
-
-      await reloadOrgs();
-      await loadData();
-      toast.success(`Grupa "${org.name}" została usunięta.`);
-    } catch (e) {
-      toast.error(`Błąd usuwania grupy: ${e.message}`);
-    }
-  }, [client, confirm, currentOrg?.id, loadData, reloadOrgs, toast]);
-
-  const handleExportOrg = useCallback(async (org) => {
-    try {
-      const organization = org;
-
-      const sections = await fetchTable(`sections?organization_id=eq.${org.id}&select=*`);
-      const members = await fetchTable(`members?organization_id=eq.${org.id}&select=*`);
-      const appointments = await fetchTable(`appointments?organization_id=eq.${org.id}&select=*`);
-      const pending = await fetchTable(`pending_registrations?organization_id=eq.${org.id}&select=*`);
-
-      const appointmentIds = appointments.map(a => a.id);
-
-      let appointmentSections = [];
-      let replies = [];
-
-      if (appointmentIds.length > 0) {
-        appointmentSections = await fetchTable(`appointment_sections?appointment_id=in.(${appointmentIds.join(",")})&select=*`);
-        replies = await fetchTable(`replies?appointment_id=in.(${appointmentIds.join(",")})&select=*`);
-      }
-
-      const backup = {
-        meta: {
-          version: 1,
-          exported_at: new Date().toISOString(),
-          source_org_id: org.id,
-        },
-        organization,
-        sections,
-        members,
-        appointments,
-        appointment_sections: appointmentSections,
-        replies,
-        pending_registrations: pending,
-      };
-
-      const filename = `backup-${String(org.slug || "grupa")}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.json`;
-      downloadJsonFile(filename, backup);
-      toast.success(`Backup grupy "${org.name}" został pobrany.`);
-    } catch (e) {
-      toast.error(`Błąd backupu: ${e.message}`);
-    }
-  }, [downloadJsonFile, fetchTable, toast]);
-
-  const handleImportOrg = useCallback(async (file) => {
-    if (!client) return;
-
-    const text = await file.text();
-    let parsed;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      toast.error("Nieprawidłowy plik JSON.");
-      return;
-    }
-
-    const backupOrg = parsed?.organization;
-    if (!backupOrg?.name) {
-      toast.error("Plik backupu nie zawiera danych organizacji.");
-      return;
-    }
-
-    const ok = await confirm({
-      title: "Przywróć backup",
-      message: `Czy przywrócić backup grupy "${backupOrg.name}"? Zostanie utworzona nowa grupa na podstawie pliku.`,
-      confirmLabel: "Przywróć",
-    });
-
-    if (!ok) return;
-
-    try {
-      const newSlug = makeImportSlug(backupOrg.slug || backupOrg.name);
-
-      const createdOrgRaw = await client.post("organizations", {
-        name: backupOrg.name,
-        slug: newSlug,
-        type: backupOrg.type || "other",
-        description: backupOrg.description || null,
-        color: backupOrg.color || "#C9A84C",
-        logo_emoji: backupOrg.logo_emoji || "🎼",
-        active: backupOrg.active ?? true,
-        archived_at: null,
-        archived_by: null,
-      });
-
-      const createdOrg = Array.isArray(createdOrgRaw) ? createdOrgRaw[0] : createdOrgRaw;
-      if (!createdOrg?.id) throw new Error("Nie udało się utworzyć organizacji z backupu.");
-
-      const oldToNewSectionId = {};
-      const oldToNewMemberId = {};
-      const oldToNewAppointmentId = {};
-
-      const backupSections = Array.isArray(parsed.sections) ? parsed.sections : [];
-      for (const s of backupSections) {
-        const createdSectionRaw = await client.post("sections", {
-          name: s.name,
-          color: s.color || "#888888",
-          organization_id: createdOrg.id,
-          sort_order: s.sort_order ?? null,
-        });
-        const createdSection = Array.isArray(createdSectionRaw) ? createdSectionRaw[0] : createdSectionRaw;
-        oldToNewSectionId[s.id] = createdSection.id;
-      }
-
-      const backupMembers = Array.isArray(parsed.members) ? parsed.members : [];
-      for (const m of backupMembers) {
-        const createdMemberRaw = await client.post("members", {
-          name: m.name,
-          email: m.email,
-          phone: m.phone || null,
-          section_id: m.section_id ? oldToNewSectionId[m.section_id] || null : null,
-          role: m.role || "member",
-          status: m.status || "active",
-          organization_id: createdOrg.id,
-          rodo_accepted: m.rodo_accepted ?? true,
-          terms_accepted: m.terms_accepted ?? true,
-          rodo_accepted_at: m.rodo_accepted_at || null,
-          terms_accepted_at: m.terms_accepted_at || null,
-          joined_at: m.joined_at || new Date().toISOString(),
-          approved_by: m.approved_by || session?.email || null,
-          approved_at: m.approved_at || null,
-        });
-        const createdMember = Array.isArray(createdMemberRaw) ? createdMemberRaw[0] : createdMemberRaw;
-        oldToNewMemberId[m.id] = createdMember.id;
-      }
-
-      const backupAppointments = Array.isArray(parsed.appointments) ? parsed.appointments : [];
-      for (const a of backupAppointments) {
-        const createdAppointmentRaw = await client.post("appointments", {
-          name: a.name,
-          type: a.type,
-          date_start: a.date_start,
-          date_end: a.date_end,
-          location: a.location || null,
-          description: a.description || null,
-          deadline: a.deadline || null,
-          status: a.status || "active",
-          published: a.published ?? true,
-          organization_id: createdOrg.id,
-          recurring_type: a.recurring_type || "none",
-          recurring_until: a.recurring_until || null,
-          recurring_group_id: a.recurring_group_id || null,
-        });
-        const createdAppointment = Array.isArray(createdAppointmentRaw) ? createdAppointmentRaw[0] : createdAppointmentRaw;
-        oldToNewAppointmentId[a.id] = createdAppointment.id;
-      }
-
-      const backupAppointmentSections = Array.isArray(parsed.appointment_sections) ? parsed.appointment_sections : [];
-      for (const rel of backupAppointmentSections) {
-        const newAppointmentId = oldToNewAppointmentId[rel.appointment_id];
-        const newSectionId = oldToNewSectionId[rel.section_id];
-        if (!newAppointmentId || !newSectionId) continue;
-
-        await client.post("appointment_sections", {
-          appointment_id: newAppointmentId,
-          section_id: newSectionId,
-        });
-      }
-
-      const backupReplies = Array.isArray(parsed.replies) ? parsed.replies : [];
-      for (const reply of backupReplies) {
-        const newAppointmentId = oldToNewAppointmentId[reply.appointment_id];
-        const newMemberId = oldToNewMemberId[reply.member_id];
-        if (!newAppointmentId || !newMemberId) continue;
-
-        await client.upsert("replies", {
-          appointment_id: newAppointmentId,
-          member_id: newMemberId,
-          status: reply.status || "maybe",
-        });
-      }
-
-      const backupPending = Array.isArray(parsed.pending_registrations) ? parsed.pending_registrations : [];
-      for (const p of backupPending) {
-        await client.post("pending_registrations", {
-          name: p.name,
-          email: p.email,
-          phone: p.phone || null,
-          organization_id: createdOrg.id,
-          section_id: p.section_id ? oldToNewSectionId[p.section_id] || null : null,
-          rodo_accepted: p.rodo_accepted ?? true,
-          terms_accepted: p.terms_accepted ?? true,
-          message: p.message || null,
-        });
-      }
-
-      await reloadOrgs();
-      toast.success(`Backup został przywrócony jako grupa "${createdOrg.name}" (${createdOrg.slug}).`);
-    } catch (e) {
-      toast.error(`Błąd przywracania backupu: ${e.message}`);
-    }
-  }, [client, confirm, makeImportSlug, reloadOrgs, session?.email, toast]);
 
   if (!config) {
     return (
