@@ -7,27 +7,27 @@ import { useData, useMyOrgs, useTokenRefresh } from './hooks/useData';
 import { useConfirm } from './components/common/ConfirmModal';
 import { css } from './styles';
 
-import { SetupScreen }     from './components/auth/SetupScreen';
-import { AuthScreen }      from './components/auth/AuthScreen';
-import { PendingScreen }   from './components/auth/PendingScreen';
-import { OrgSelectScreen } from './components/auth/OrgSelectScreen';
-import { Sidebar }         from './components/layout/Sidebar';
-import { Dashboard }       from './components/dashboard/Dashboard';
-import { CalendarView }    from './components/calendar/CalendarView';
-import { AppointmentsView }from './components/appointments/AppointmentsView';
-import { MembersView }     from './components/members/MembersView';
-import { PendingView }     from './components/members/PendingView';
-import { StatsView }       from './components/stats/StatsView';
-import { AptModal }        from './components/appointments/AptModal';
-import { CreateModal }     from './components/appointments/CreateModal';
-import { MemberModal }     from './components/members/MemberModal';
-import { AddMemberModal }  from './components/members/AddMemberModal';
-import { OrgManager }      from './components/admin/OrgManager';
-import { SectionManager }  from './components/admin/SectionManager';
+import { SetupScreen }      from './components/auth/SetupScreen';
+import { AuthScreen }       from './components/auth/AuthScreen';
+import { PendingScreen }    from './components/auth/PendingScreen';
+import { OrgSelectScreen }  from './components/auth/OrgSelectScreen';
+import { Sidebar }          from './components/layout/Sidebar';
+import { Dashboard }        from './components/dashboard/Dashboard';
+import { CalendarView }     from './components/calendar/CalendarView';
+import { AppointmentsView } from './components/appointments/AppointmentsView';
+import { MembersView }      from './components/members/MembersView';
+import { PendingView }      from './components/members/PendingView';
+import { StatsView }        from './components/stats/StatsView';
+import { AptModal }         from './components/appointments/AptModal';
+import { CreateModal }      from './components/appointments/CreateModal';
+import { MemberModal }      from './components/members/MemberModal';
+import { AddMemberModal }   from './components/members/AddMemberModal';
+import { OrgManager }       from './components/admin/OrgManager';
+import { SectionManager }   from './components/admin/SectionManager';
 
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
 export default function AppRoot() {
-  return <ToastProvider><App/></ToastProvider>;
+  return <ToastProvider><App /></ToastProvider>;
 }
 
 // ─── APP ──────────────────────────────────────────────────────────────────────
@@ -54,7 +54,7 @@ function App() {
     return null;
   });
 
-  // ─── ORGANIZATION ─────────────────────────────────────────────────────────
+  // ─── ORGANIZATION ────────────────────────────────────────────────────────
   const [currentOrg, setCurrentOrg] = useState(() => {
     try {
       const o = JSON.parse(localStorage.getItem("km_org") || "null");
@@ -63,7 +63,7 @@ function App() {
     return null;
   });
 
-  // ─── UI STATE ─────────────────────────────────────────────────────────────
+  // ─── UI STATE ────────────────────────────────────────────────────────────
   const [view, setView] = useState("dashboard");
   const [selectedApt, setSelectedApt] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -76,7 +76,7 @@ function App() {
   const [calYear, setCalYear] = useState(new Date().getFullYear());
   const [calSelected, setCalSelected] = useState(null);
 
-  // ─── LOGOUT — zdefiniowany jako pierwszy (potrzebny w handleUnauthorized) ──
+  // ─── LOGOUT ──────────────────────────────────────────────────────────────
   const handleLogout = useCallback(() => {
     if (session?.token && config) {
       createAuthClient(config.url, config.key).logout(session.token);
@@ -93,13 +93,13 @@ function App() {
     handleLogout();
   }, [handleLogout, toast]);
 
-  // ─── TOKEN AUTO-REFRESH ───────────────────────────────────────────────────
+  // ─── TOKEN AUTO-REFRESH ─────────────────────────────────────────────────
   useTokenRefresh(config, session, (newSession) => {
     localStorage.setItem("km_session", JSON.stringify(newSession));
     setSession(newSession);
   });
 
-  // ─── HANDLERS ─────────────────────────────────────────────────────────────
+  // ─── HANDLERS ────────────────────────────────────────────────────────────
   const handleSaveConfig = useCallback((url, key) => {
     const cfg = { url: url.trim(), key: key.trim() };
     localStorage.setItem("km_config", JSON.stringify(cfg));
@@ -147,7 +147,7 @@ function App() {
     setView("dashboard");
   }, []);
 
-  // ─── DATA ─────────────────────────────────────────────────────────────────
+  // ─── DATA ────────────────────────────────────────────────────────────────
   const { data, loading, error, loadData, updateReply, revertReply, api } =
     useData(config, session, currentOrg, handleUnauthorized);
 
@@ -155,30 +155,43 @@ function App() {
     useMyOrgs(config, session, handleUnauthorized);
 
   useEffect(() => {
-    if (myOrgs.length === 1 && !currentOrg) handleSelectOrg(myOrgs[0]);
+    if (myOrgs.length === 1 && !currentOrg) {
+      handleSelectOrg(myOrgs[0]);
+    }
   }, [myOrgs, currentOrg, handleSelectOrg]);
 
-  // ─── DERIVED STATE ────────────────────────────────────────────────────────
+  // ─── DERIVED STATE ───────────────────────────────────────────────────────
   const currentMember = useMemo(
     () => data.members.find(m => m.email === session?.email) ?? null,
     [data.members, session?.email]
   );
-  const isAdmin      = useMemo(() => ["admin", "leader", "super_admin"].includes(currentMember?.role), [currentMember?.role]);
-  const isManager    = useMemo(() => ["admin", "leader", "manager", "super_admin"].includes(currentMember?.role), [currentMember?.role]);
+
+  const isAdmin = useMemo(
+    () => ["admin", "leader", "super_admin"].includes(currentMember?.role),
+    [currentMember?.role]
+  );
+
+  const isManager = useMemo(
+    () => ["admin", "leader", "manager", "super_admin"].includes(currentMember?.role),
+    [currentMember?.role]
+  );
+
   const isSuperAdmin = currentMember?.role === "super_admin";
-  const isActive     = currentMember?.status === "active";
+  const isActive = currentMember?.status === "active";
 
   const getReplies = useCallback((aptId) => {
     const r = {};
-    data.replies.filter(x => x.appointment_id === aptId).forEach(x => {
-      r[x.member_id] = x.status;
-    });
+    data.replies
+      .filter(x => x.appointment_id === aptId)
+      .forEach(x => {
+        r[x.member_id] = x.status;
+      });
     return r;
   }, [data.replies]);
 
   const client = useMemo(() => api(), [api]);
 
-  // ─── APPOINTMENT HANDLERS ─────────────────────────────────────────────────
+  // ─── APPOINTMENT HANDLERS ────────────────────────────────────────────────
   const createSingleApt = useCallback(async (aptData, sectionIds, tutti, groupId = null) => {
     if (!client || !currentOrg?.id) throw new Error("Brak połączenia lub organizacji.");
 
@@ -215,7 +228,11 @@ function App() {
     if (invited.length > 0) {
       await client.insertIgnore(
         "replies",
-        invited.map(m => ({ appointment_id: apt.id, member_id: m.id, status: "maybe" }))
+        invited.map(m => ({
+          appointment_id: apt.id,
+          member_id: m.id,
+          status: "maybe"
+        }))
       );
     }
 
@@ -227,8 +244,10 @@ function App() {
       toast.error("Brak połączenia z bazą.");
       return;
     }
+
     try {
       const sids = form.tutti ? [] : (form.sectionIds || []);
+
       if (form.recurring === "none" || !form.recurringUntil) {
         await createSingleApt(form, sids, form.tutti);
         toast.success("Termin utworzony.");
@@ -248,13 +267,15 @@ function App() {
             ...form,
             dateStart: new Date(cur).toISOString(),
             dateEnd: new Date(cur.getTime() + dur).toISOString(),
-            deadline: dlOff != null ? new Date(cur.getTime() - dlOff).toISOString() : form.deadline,
+            deadline: dlOff != null ? new Date(cur.getTime() - dlOff).toISOString() : form.deadline
           }, sids, form.tutti, groupId);
           cur.setDate(cur.getDate() + step);
           count++;
         }
+
         toast.success(`Utworzono ${count} terminów w serii.`);
       }
+
       await loadData();
     } catch (e) {
       toast.error(`Błąd tworzenia terminu: ${e.message}`);
@@ -266,19 +287,26 @@ function App() {
       toast.error("Brak połączenia.");
       return;
     }
+
     const prev = getReplies(aptId)[memberId] ?? null;
     updateReply(aptId, memberId, status);
+
     try {
-      await client.upsert("replies", { appointment_id: aptId, member_id: memberId, status });
+      await client.upsert("replies", {
+        appointment_id: aptId,
+        member_id: memberId,
+        status
+      });
     } catch (e) {
       revertReply(aptId, memberId, prev);
       toast.error(`Nie udało się zapisać odpowiedzi: ${e.message}`);
     }
   }, [client, getReplies, updateReply, revertReply, toast]);
 
-  // ─── MEMBER HANDLERS ──────────────────────────────────────────────────────
+  // ─── MEMBER HANDLERS ─────────────────────────────────────────────────────
   const handleApproveMember = useCallback(async (pending) => {
     if (!client || !currentOrg?.id) return;
+
     try {
       await client.post("members", {
         name: pending.name?.trim(),
@@ -296,6 +324,7 @@ function App() {
         approved_by: currentMember?.email,
         approved_at: new Date().toISOString(),
       });
+
       await client.delete(`pending_registrations?id=eq.${pending.id}`);
       await loadData();
       toast.success(`${pending.name} został/a dodany/a do grupy.`);
@@ -311,6 +340,7 @@ function App() {
       danger: true,
       confirmLabel: "Odrzuć",
     });
+
     if (!ok || !client) return;
 
     try {
@@ -324,6 +354,7 @@ function App() {
 
   const handleUpdateMember = useCallback(async (id, updates) => {
     if (!client) return;
+
     try {
       await client.patch(`members?id=eq.${id}`, updates);
       await loadData();
@@ -340,6 +371,7 @@ function App() {
       toast.error("Podaj imię i nazwisko.");
       return;
     }
+
     if (memberData.email && !validators.email(memberData.email)) {
       toast.error("Nieprawidłowy email.");
       return;
@@ -354,6 +386,7 @@ function App() {
         approved_by: currentMember?.email,
         approved_at: new Date().toISOString(),
       });
+
       await loadData();
       toast.success(`${memberData.name} dodany/a do grupy.`);
     } catch (e) {
@@ -361,9 +394,10 @@ function App() {
     }
   }, [client, currentOrg?.id, currentMember?.email, loadData, toast]);
 
-  // ─── SECTION HANDLERS ─────────────────────────────────────────────────────
+  // ─── SECTION HANDLERS ────────────────────────────────────────────────────
   const handleAddSection = useCallback(async (sectionData) => {
     if (!client || !currentOrg?.id) return;
+
     try {
       await client.post("sections", { ...sectionData, organization_id: currentOrg.id });
       await loadData();
@@ -375,6 +409,7 @@ function App() {
 
   const handleUpdateSection = useCallback(async (id, updates) => {
     if (!client) return;
+
     try {
       await client.patch(`sections?id=eq.${id}`, updates);
       await loadData();
@@ -386,6 +421,7 @@ function App() {
 
   const handleDeleteSection = useCallback(async (id) => {
     if (!client) return;
+
     try {
       await client.patch(`members?section_id=eq.${id}`, { section_id: null });
       await client.delete(`sections?id=eq.${id}`);
@@ -398,6 +434,7 @@ function App() {
 
   const handleReorderSections = useCallback(async (updates) => {
     if (!client) return;
+
     try {
       await Promise.all(
         updates.map(({ id, sort_order }) =>
@@ -410,7 +447,7 @@ function App() {
     }
   }, [client, loadData, toast]);
 
-  // ─── ORG HANDLERS ─────────────────────────────────────────────────────────
+  // ─── ORG HANDLERS ────────────────────────────────────────────────────────
   const handleCreateOrg = useCallback(async (formData) => {
     if (!client) return;
 
@@ -418,6 +455,7 @@ function App() {
       toast.error("Nieprawidłowy slug.");
       return;
     }
+
     if (!validators.name(formData.name)) {
       toast.error("Nazwa za krótka.");
       return;
@@ -452,20 +490,24 @@ function App() {
       }
 
       if (session?.email) {
-        await client.post("members", {
-          name: currentMember?.name || session.email,
-          email: session.email,
-          phone: currentMember?.phone || null,
-          section_id: null,
-          role: "super_admin",
-          status: "active",
-          organization_id: org.id,
-          rodo_accepted: true,
-          terms_accepted: true,
-          joined_at: new Date().toISOString(),
-          approved_by: session.email,
-          approved_at: new Date().toISOString(),
-        });
+        try {
+          await client.post("members", {
+            name: currentMember?.name || session.email,
+            email: session.email,
+            phone: currentMember?.phone || null,
+            section_id: null,
+            role: "super_admin",
+            status: "active",
+            organization_id: org.id,
+            rodo_accepted: true,
+            terms_accepted: true,
+            joined_at: new Date().toISOString(),
+            approved_by: session.email,
+            approved_at: new Date().toISOString(),
+          });
+        } catch (membershipError) {
+          toast.info(`Grupa została utworzona, ale nie udało się automatycznie przypisać Cię do niej: ${membershipError.message}`);
+        }
       }
 
       await reloadOrgs();
@@ -477,10 +519,12 @@ function App() {
 
   const handleUpdateOrg = useCallback(async (id, updates) => {
     if (!client) return;
+
     if (updates.slug && !validators.slug(updates.slug)) {
       toast.error("Nieprawidłowy slug.");
       return;
     }
+
     try {
       await client.patch(`organizations?id=eq.${id}`, {
         ...updates,
@@ -501,21 +545,85 @@ function App() {
     }
   }, [client, currentOrg, reloadOrgs, toast]);
 
-  // ─── RENDER GUARDS ────────────────────────────────────────────────────────
-  if (!config)
-    return <><style>{css}</style><SetupScreen onSave={handleSaveConfig} /></>;
-  if (!session)
-    return <><style>{css}</style><AuthScreen config={config} onLogin={handleLogin} /></>;
-  if (!currentOrg)
-    return <><style>{css}</style><OrgSelectScreen organizations={myOrgs} loading={loadingOrgs} error={orgsError} onSelect={handleSelectOrg} onLogout={handleLogout} userEmail={session.email} /></>;
-  if (!loading && currentMember && !isActive)
-    return <><style>{css}</style><PendingScreen onLogout={handleLogout} /></>;
+  const handleDeleteOrg = useCallback(async (org) => {
+    if (!client || !org?.id) return;
+
+    const ok = await confirm({
+      title: "Usuń grupę",
+      message: `Czy na pewno usunąć grupę "${org.name}"? Ta operacja usunie także powiązane dane i nie będzie można jej cofnąć.`,
+      danger: true,
+      confirmLabel: "Usuń grupę",
+    });
+
+    if (!ok) return;
+
+    try {
+      await client.delete(`organizations?id=eq.${org.id}`);
+
+      if (currentOrg?.id === org.id) {
+        localStorage.removeItem("km_org");
+        setCurrentOrg(null);
+        setView("dashboard");
+      }
+
+      await reloadOrgs();
+      await loadData();
+      toast.success(`Grupa "${org.name}" została usunięta.`);
+    } catch (e) {
+      toast.error(`Błąd usuwania grupy: ${e.message}`);
+    }
+  }, [client, confirm, currentOrg?.id, loadData, reloadOrgs, toast]);
+
+  // ─── RENDER GUARDS ───────────────────────────────────────────────────────
+  if (!config) {
+    return (
+      <>
+        <style>{css}</style>
+        <SetupScreen onSave={handleSaveConfig} />
+      </>
+    );
+  }
+
+  if (!session) {
+    return (
+      <>
+        <style>{css}</style>
+        <AuthScreen config={config} onLogin={handleLogin} />
+      </>
+    );
+  }
+
+  if (!currentOrg) {
+    return (
+      <>
+        <style>{css}</style>
+        <OrgSelectScreen
+          organizations={myOrgs}
+          loading={loadingOrgs}
+          error={orgsError}
+          onSelect={handleSelectOrg}
+          onLogout={handleLogout}
+          userEmail={session.email}
+        />
+      </>
+    );
+  }
+
+  if (!loading && currentMember && !isActive) {
+    return (
+      <>
+        <style>{css}</style>
+        <PendingScreen onLogout={handleLogout} />
+      </>
+    );
+  }
 
   const authValue = { currentMember, isAdmin, isManager, isSuperAdmin, session, currentOrg };
 
   return (
     <AuthCtx.Provider value={authValue}>
       <style>{css}</style>
+
       <div className="app">
         <Sidebar
           view={view}
@@ -525,6 +633,7 @@ function App() {
           onManageOrgs={isSuperAdmin ? () => setShowOrgManager(true) : null}
           pendingCount={data.pending.length}
         />
+
         <div className="main">
           {error && (
             <div className="error-banner">
@@ -534,6 +643,7 @@ function App() {
               </button>
             </div>
           )}
+
           {loading ? (
             <div className="loading">
               <div className="spinner" />
@@ -550,6 +660,7 @@ function App() {
                   onReply={handleReply}
                 />
               )}
+
               {view === "calendar" && (
                 <CalendarView
                   data={data}
@@ -564,6 +675,7 @@ function App() {
                   onCreateApt={() => setShowCreate(true)}
                 />
               )}
+
               {view === "appointments" && (
                 <AppointmentsView
                   data={data}
@@ -573,6 +685,7 @@ function App() {
                   onReply={handleReply}
                 />
               )}
+
               {view === "members" && (
                 <MembersView
                   data={data}
@@ -580,6 +693,7 @@ function App() {
                   onAddMember={() => setShowAddMember(true)}
                 />
               )}
+
               {view === "pending" && isManager && (
                 <PendingView
                   data={data}
@@ -587,6 +701,7 @@ function App() {
                   onReject={handleRejectMember}
                 />
               )}
+
               {view === "stats" && isManager && (
                 <StatsView
                   data={data}
@@ -606,7 +721,7 @@ function App() {
           sections={data.sections}
           onClose={() => setSelectedApt(null)}
           onReply={handleReply}
-          onCopy={apt => {
+          onCopy={(apt) => {
             setCopyApt(apt);
             setSelectedApt(null);
           }}
@@ -655,6 +770,7 @@ function App() {
           organizations={myOrgs}
           onCreateOrg={handleCreateOrg}
           onUpdateOrg={handleUpdateOrg}
+          onDeleteOrg={handleDeleteOrg}
           onClose={() => setShowOrgManager(false)}
         />
       )}
