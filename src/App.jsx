@@ -7,6 +7,16 @@ import { useData, useMyOrgs, useTokenRefresh } from './hooks/useData';
 import { useConfirm } from './components/common/ConfirmModal';
 import { useOrgAdmin } from './hooks/useOrgAdmin';
 import { makeUniqueSlug, normalizeSlug } from './services/orgService';
+import {
+  canManageOrganizations,
+  canManageMembers,
+  canManageRoles,
+  canManageSections,
+  canManageAppointments,
+  canReviewPending,
+  canExportMembers,
+  isSuperAdminRole,
+} from './utils/roles';
 import { css } from './styles';
 
 import { SetupScreen } from './components/auth/SetupScreen';
@@ -162,17 +172,48 @@ function App() {
     [data.members, session?.email]
   );
 
+  const currentRole = currentMember?.role || "member";
+
+  const isSuperAdmin = useMemo(
+    () => isSuperAdminRole(currentRole),
+    [currentRole]
+  );
+
   const isAdmin = useMemo(
-    () => ["admin", "leader", "super_admin"].includes(currentMember?.role),
-    [currentMember?.role]
+    () => canManageMembers(currentRole),
+    [currentRole]
   );
 
   const isManager = useMemo(
-    () => ["admin", "leader", "manager", "super_admin"].includes(currentMember?.role),
-    [currentMember?.role]
+    () => canManageAppointments(currentRole),
+    [currentRole]
   );
 
-  const isSuperAdmin = currentMember?.role === "super_admin";
+  const canManageOrgs = useMemo(
+    () => canManageOrganizations(currentRole),
+    [currentRole]
+  );
+
+  const canManageMemberRoles = useMemo(
+    () => canManageRoles(currentRole),
+    [currentRole]
+  );
+
+  const canManageGroupSections = useMemo(
+    () => canManageSections(currentRole),
+    [currentRole]
+  );
+
+  const canHandlePending = useMemo(
+    () => canReviewPending(currentRole),
+    [currentRole]
+  );
+
+  const canExportMembersList = useMemo(
+    () => canExportMembers(currentRole),
+    [currentRole]
+  );
+
   const isActive = currentMember?.status === "active";
 
   const getReplies = useCallback((aptId) => {
@@ -551,7 +592,20 @@ function App() {
     );
   }
 
-  const authValue = { currentMember, isAdmin, isManager, isSuperAdmin, session, currentOrg };
+  const authValue = {
+    currentMember,
+    currentRole,
+    isAdmin,
+    isManager,
+    isSuperAdmin,
+    canManageOrgs,
+    canManageMemberRoles,
+    canManageGroupSections,
+    canHandlePending,
+    canExportMembersList,
+    session,
+    currentOrg
+  };
 
   return (
     <AuthCtx.Provider value={authValue}>
@@ -563,7 +617,7 @@ function App() {
           setView={setView}
           onLogout={handleLogout}
           onSwitchOrg={activeMyOrgs.length > 1 ? handleSwitchOrg : null}
-          onManageOrgs={isSuperAdmin ? () => setShowOrgManager(true) : null}
+          onManageOrgs={canManageOrgs ? () => setShowOrgManager(true) : null}
           pendingCount={data.pending.length}
         />
 
@@ -627,7 +681,7 @@ function App() {
                 />
               )}
 
-              {view === "pending" && isManager && (
+              {view === "pending" && canHandlePending && (
                 <PendingView
                   data={data}
                   onApprove={handleApproveMember}
@@ -635,7 +689,7 @@ function App() {
                 />
               )}
 
-              {view === "stats" && isManager && (
+              {view === "stats" && canHandlePending && (
                 <StatsView
                   data={data}
                   getReplies={getReplies}
@@ -686,13 +740,16 @@ function App() {
           getReplies={getReplies}
           onClose={() => setSelectedMember(null)}
           onUpdate={handleUpdateMember}
-          isAdmin={isAdmin}
+          canEditMember={isAdmin}
+          canManageRoles={canManageMemberRoles}
+          currentUserRole={currentRole}
         />
       )}
 
       {showAddMember && isAdmin && (
         <AddMemberModal
           sections={data.sections}
+          currentUserRole={currentRole}
           onClose={() => setShowAddMember(false)}
           onAdd={handleAddMember}
         />
@@ -712,7 +769,7 @@ function App() {
         />
       )}
 
-      {showSectionManager && isManager && (
+      {showSectionManager && canManageGroupSections && (
         <SectionManager
           sections={data.sections}
           orgType={currentOrg?.type}
