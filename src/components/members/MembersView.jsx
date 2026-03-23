@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Icon } from '../common/Icon';
 import { ROLE_LABELS, fmt } from '../../config';
+import { getMemberBuckets } from '../../utils/roles';
 
 // ─── MEMBERS VIEW ─────────────────────────────────────────────────────────────
 export function MembersView({ data, onSelectMember, onAddMember }) {
-  const { isAdmin, isManager } = useAuth();
+  const { isAdmin, canExportMembersList } = useAuth();
   const [filter, setFilter] = useState("active");
   const [search, setSearch] = useState("");
 
@@ -84,14 +85,7 @@ export function MembersView({ data, onSelectMember, onAddMember }) {
     );
   };
 
-  const adminRoles = ["super_admin", "admin", "manager"];
-  const administrationMembers = filtered.filter(
-    m => !m.section_id && adminRoles.includes(m.role)
-  );
-
-  const unassignedMembers = filtered.filter(
-    m => !m.section_id && !adminRoles.includes(m.role)
-  );
+  const { administration, leaders, unassigned } = getMemberBuckets(filtered);
 
   return (
     <>
@@ -104,7 +98,7 @@ export function MembersView({ data, onSelectMember, onAddMember }) {
         </div>
 
         <div style={{ display: "flex", gap: 8 }}>
-          {isManager && (
+          {canExportMembersList && (
             <button className="btn btn-secondary" onClick={exportCSV}>
               <Icon name="list" size={15} /> Eksport CSV
             </button>
@@ -161,32 +155,48 @@ export function MembersView({ data, onSelectMember, onAddMember }) {
           );
         })}
 
-        {!!administrationMembers.length && (
+        {!!administration.length && (
           <div>
             <div className="section-header">
               <div className="section-dot" style={{ background: "#C9A84C" }} />
               <div className="section-name-lbl">Administracja</div>
-              <div className="section-count">{administrationMembers.length} os.</div>
+              <div className="section-count">{administration.length} os.</div>
             </div>
 
             <div className="members-grid">
-              {administrationMembers.map(m =>
+              {administration.map(m =>
                 renderMemberCard(m, "#C9A84C", "var(--bg4)", "Administracja")
               )}
             </div>
           </div>
         )}
 
-        {!!unassignedMembers.length && (
+        {!!leaders.length && (
+          <div>
+            <div className="section-header">
+              <div className="section-dot" style={{ background: "#5B9BD5" }} />
+              <div className="section-name-lbl">Liderzy</div>
+              <div className="section-count">{leaders.length} os.</div>
+            </div>
+
+            <div className="members-grid">
+              {leaders.map(m =>
+                renderMemberCard(m, "#5B9BD5", "var(--bg4)", "Liderzy")
+              )}
+            </div>
+          </div>
+        )}
+
+        {!!unassigned.length && (
           <div>
             <div className="section-header">
               <div className="section-dot" style={{ background: "var(--text3)" }} />
               <div className="section-name-lbl">Bez sekcji</div>
-              <div className="section-count">{unassignedMembers.length} os.</div>
+              <div className="section-count">{unassigned.length} os.</div>
             </div>
 
             <div className="members-grid">
-              {unassignedMembers.map(m =>
+              {unassigned.map(m =>
                 renderMemberCard(m, "var(--text3)", "var(--bg4)", "Bez sekcji")
               )}
             </div>
