@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
 import { Icon } from '../common/Icon';
 import { validators } from '../../config';
+import { getVisibleRoleOptions } from '../../utils/roles';
 
 // ─── ADD MEMBER MODAL ─────────────────────────────────────────────────────────
-export function AddMemberModal({ sections, onClose, onAdd }) {
+export function AddMemberModal({ sections, currentUserRole, onClose, onAdd }) {
   const [form, setForm] = useState({
-    name:"", email:"", phone:"", section_id:"", role:"member", notes:"",
+    name: "", email: "", phone: "", section_id: "", role: "member", notes: "",
   });
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
+
+  const roleOptions = getVisibleRoleOptions(currentUserRole).filter(r => r.value !== "super_admin");
 
   const setF = (k, v) => {
     setForm(f => ({ ...f, [k]: v }));
@@ -17,12 +20,9 @@ export function AddMemberModal({ sections, onClose, onAdd }) {
 
   const validate = () => {
     const errs = {};
-    if (!validators.name(form.name))
-      errs.name = "Imię i nazwisko — min. 2 znaki";
-    if (form.email && !validators.email(form.email))
-      errs.email = "Podaj prawidłowy adres email";
-    if (form.phone && !validators.phone(form.phone))
-      errs.phone = "Podaj prawidłowy numer telefonu";
+    if (!validators.name(form.name)) errs.name = "Imię i nazwisko — min. 2 znaki";
+    if (form.email && !validators.email(form.email)) errs.email = "Podaj prawidłowy adres email";
+    if (form.phone && !validators.phone(form.phone)) errs.phone = "Podaj prawidłowy numer telefonu";
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -32,18 +32,18 @@ export function AddMemberModal({ sections, onClose, onAdd }) {
     setSaving(true);
     try {
       await onAdd({
-        name:       form.name.trim(),
-        email:      form.email?.trim().toLowerCase() || null,
-        phone:      form.phone?.trim() || null,
+        name: form.name.trim(),
+        email: form.email?.trim().toLowerCase() || null,
+        phone: form.phone?.trim() || null,
         section_id: form.section_id || null,
-        role:       form.role,
-        notes:      form.notes?.trim() || null,
-        status:     "active",
-        rodo_accepted:     true,
-        terms_accepted:    true,
-        rodo_accepted_at:  new Date().toISOString(),
+        role: form.role,
+        notes: form.notes?.trim() || null,
+        status: "active",
+        rodo_accepted: true,
+        terms_accepted: true,
+        rodo_accepted_at: new Date().toISOString(),
         terms_accepted_at: new Date().toISOString(),
-        joined_at:         new Date().toISOString(),
+        joined_at: new Date().toISOString(),
       });
       onClose();
     } finally {
@@ -59,7 +59,7 @@ export function AddMemberModal({ sections, onClose, onAdd }) {
         <div className="modal-header">
           <div className="modal-title">Dodaj członka</div>
           <button className="btn btn-ghost btn-sm" aria-label="Zamknij" onClick={onClose}>
-            <Icon name="x" size={16}/>
+            <Icon name="x" size={16} />
           </button>
         </div>
 
@@ -73,7 +73,8 @@ export function AddMemberModal({ sections, onClose, onAdd }) {
             <div className="form-group">
               <label className="form-label" htmlFor="add-name">Imię i nazwisko *</label>
               <input
-                id="add-name" autoFocus
+                id="add-name"
+                autoFocus
                 className={`form-input ${errors.name ? "input-error" : ""}`}
                 placeholder="Jan Kowalski"
                 value={form.name}
@@ -85,7 +86,8 @@ export function AddMemberModal({ sections, onClose, onAdd }) {
             <div className="form-group">
               <label className="form-label" htmlFor="add-email">Email</label>
               <input
-                id="add-email" type="email"
+                id="add-email"
+                type="email"
                 className={`form-input ${errors.email ? "input-error" : ""}`}
                 placeholder="jan@email.pl"
                 value={form.email}
@@ -121,16 +123,15 @@ export function AddMemberModal({ sections, onClose, onAdd }) {
           <div className="form-group">
             <label className="form-label" htmlFor="add-role">Rola</label>
             <select id="add-role" className="form-input" value={form.role} onChange={e => setF("role", e.target.value)}>
-              <option value="member">Członek</option>
-              <option value="manager">Zarządca</option>
-              <option value="leader">Lider</option>
-              <option value="admin">Administrator</option>
+              {roleOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
             </select>
           </div>
 
           <div className="form-group">
             <label className="form-label" htmlFor="add-notes">Notatki (opcjonalnie)</label>
-            <textarea id="add-notes" className="form-input" placeholder="Dodatkowe informacje..." value={form.notes} onChange={e => setF("notes", e.target.value)}/>
+            <textarea id="add-notes" className="form-input" placeholder="Dodatkowe informacje..." value={form.notes} onChange={e => setF("notes", e.target.value)} />
           </div>
         </div>
 
@@ -138,8 +139,8 @@ export function AddMemberModal({ sections, onClose, onAdd }) {
           <button className="btn btn-secondary" onClick={onClose} disabled={saving}>Anuluj</button>
           <button className="btn btn-primary" disabled={saving} onClick={handleSubmit}>
             {saving
-              ? <><div className="spinner" style={{ width:14, height:14, borderWidth:2 }}/> Zapisywanie…</>
-              : <><Icon name="check" size={14}/> Dodaj członka</>
+              ? <><div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> Zapisywanie…</>
+              : <><Icon name="check" size={14} /> Dodaj członka</>
             }
           </button>
         </div>
