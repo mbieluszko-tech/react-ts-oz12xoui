@@ -6,11 +6,23 @@ import { getMemberBuckets } from '../../utils/roles';
 
 // ─── MEMBERS VIEW ─────────────────────────────────────────────────────────────
 export function MembersView({ data, onSelectMember, onAddMember }) {
-  const { isAdmin, canExportMembersList } = useAuth();
+  const { currentMember, isAdmin, canExportMembersList } = useAuth();
   const [filter, setFilter] = useState("active");
   const [search, setSearch] = useState("");
 
-  const filtered = data.members.filter(m => {
+const filtered = data.members.filter(m => {
+  const matchStatus = filter==="all" || m.status===filter;
+  const matchSearch = !search || m.name.toLowerCase().includes(search.toLowerCase()) || (m.email||"").toLowerCase().includes(search.toLowerCase());
+
+  // 🔥 KLUCZOWE — ograniczenie dla lidera
+  const isLeader = currentMember?.role === "leader";
+
+  if (isLeader && m.section_id !== currentMember.section_id) {
+    return false;
+  }
+
+  return matchStatus && matchSearch;
+});
     const matchStatus = filter === "all" || m.status === filter;
     const matchSearch =
       !search ||
